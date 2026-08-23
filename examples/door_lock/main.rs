@@ -277,6 +277,8 @@ fn main() {
         .expect("failed to write examples/door_lock/door_lock.md");
     println!("\nmermaid diagram written to examples/door_lock/door_lock.md");
 
+    // A defect fails the run rather than scrolling past in the output.
     let coverage = render::coverage::<Door>(Tag::Locked, EDGES, IGNORES);
-    println!("coverage clean: {}", coverage.is_clean());
+    assert!(coverage.is_clean(), "{coverage:?}");
+    println!("coverage: clean");
 }

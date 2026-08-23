@@ -9,7 +9,7 @@ use std::fmt::Write as _;
 
 use crate::feature::FeatureInfo;
 use crate::machine::{Edge, Goto, Ignore, OnUnknown, State};
-use crate::{Domain, MachineSpec};
+use crate::{Domain, Enumerable, MachineSpec};
 
 /// The result of checking every `(state × event kind)` combination.
 #[derive(Debug, Default)]
@@ -17,6 +17,9 @@ pub struct Coverage {
     /// Combinations with neither an edge nor an [`Ignore`]. **Must be empty in
     /// CI.**
     pub holes: Vec<(String, String)>,
+    /// Combinations an [`Ignore`] forbids and an edge handles anyway, with the
+    /// offending edge ids.
+    pub ignored_but_handled: Vec<(String, String, Vec<&'static str>)>,
     /// Combinations matched by more than one edge. Not necessarily wrong, since
     /// declaration order is priority, but worth reviewing.
     pub overlaps: Vec<(String, String, Vec<&'static str>)>,
@@ -25,18 +28,25 @@ pub struct Coverage {
     /// Guard node names used by more than one node type. The [`crate::machine::Memo`] key
     /// is the name, so names must be unique.
     pub duplicate_node_names: Vec<&'static str>,
+    /// Edge ids carried by more than one edge. The id names a transition in
+    /// [`crate::machine::Taken`], in logs and in golden diffs.
+    pub duplicate_edge_ids: Vec<&'static str>,
 }
 
 impl Coverage {
     /// Whether the table is free of defects. `overlaps` is excluded: it is a
     /// review signal, not an error.
     pub fn is_clean(&self) -> bool {
-        self.holes.is_empty() && self.unreachable.is_empty() && self.duplicate_node_names.is_empty()
+        self.holes.is_empty()
+            && self.ignored_but_handled.is_empty()
+            && self.unreachable.is_empty()
+            && self.duplicate_node_names.is_empty()
+            && self.duplicate_edge_ids.is_empty()
     }
 }
 
-/// Checks a transition table for gaps, unreachable states, and guard name
-/// collisions.
+/// Checks a transition table for gaps, contradicted [`Ignore`]s, unreachable
+/// states, and duplicate names.
 ///
 /// - `initial`: the machine's starting state.
 /// - `edges`, `ignores`: the transition table to check.
@@ -57,13 +67,26 @@ pub fn coverage<M: MachineSpec>(
                 .map(|e| e.id)
                 .collect();
 
+            // An `Ignore` is a floor, not a fallback: guards do not enter into
+            // it, so a single edge on the combination contradicts the ban.
+            let ignored = ignores.iter().any(|i| i.matches(tag, kind));
+
             if hits.is_empty() {
-                if !ignores.iter().any(|i| i.matches(tag, kind)) {
+                if !ignored {
                     out.holes.push((format!("{tag:?}"), format!("{kind:?}")));
                 }
-            } else if hits.len() > 1 {
-                out.overlaps
-                    .push((format!("{tag:?}"), format!("{kind:?}"), hits));
+            } else {
+                if ignored {
+                    out.ignored_but_handled.push((
+                        format!("{tag:?}"),
+                        format!("{kind:?}"),
+                        hits.clone(),
+                    ));
+                }
+                if hits.len() > 1 {
+                    out.overlaps
+                        .push((format!("{tag:?}"), format!("{kind:?}"), hits));
+                }
             }
         }
     }
@@ -96,15 +119,25 @@ pub fn coverage<M: MachineSpec>(
     // Reusing one node across many edges is normal. What must be caught is two
     // *different* node types sharing a name, since they would then share a Memo
     // entry and poison each other's cached result.
-    let mut ids: Vec<(&'static str, TypeId)> = Vec::new();
+    let mut node_ids: Vec<(&'static str, TypeId)> = Vec::new();
     for e in edges {
-        e.check.node_ids(&mut ids);
+        e.check.node_ids(&mut node_ids);
     }
-    ids.sort_unstable();
-    ids.dedup();
-    for w in ids.windows(2) {
+    node_ids.sort_unstable();
+    node_ids.dedup();
+    for w in node_ids.windows(2) {
         if w[0].0 == w[1].0 && !out.duplicate_node_names.contains(&w[0].0) {
             out.duplicate_node_names.push(w[0].0);
+        }
+    }
+
+    // Unlike node names, every repeat is a defect, so the list is not deduped
+    // before the scan.
+    let mut edge_ids: Vec<&'static str> = edges.iter().map(|e| e.id).collect();
+    edge_ids.sort_unstable();
+    for w in edge_ids.windows(2) {
+        if w[0] == w[1] && !out.duplicate_edge_ids.contains(&w[0]) {
+            out.duplicate_edge_ids.push(w[0]);
         }
     }
 
@@ -133,8 +166,8 @@ pub fn handled_kinds<M: MachineSpec>(
 /// Builds a mermaid `stateDiagram-v2` diagram from a transition table.
 ///
 /// - `initial`: the machine's starting state.
-/// - `edges`: the transitions to draw. [`Goto::Internal`] edges are omitted
-///   (they'd draw as unreadable self-loops) — use [`internal_table`] for those.
+/// - `edges`: the transitions to draw. [`Goto::Internal`] edges are omitted —
+///   use [`internal_table`] for those.
 /// - `states`: entry/exit actions, drawn as state descriptions.
 ///
 /// Returns the diagram source. Converts to PlantUML almost line for line;
@@ -148,7 +181,7 @@ pub fn to_mermaid<M: MachineSpec>(
     let _ = writeln!(s, "    [*] --> {initial:?}");
 
     // Declaration order, not the order the nodes were passed in.
-    for &tag in M::all_tags() {
+    for &tag in <M::Tag as Enumerable>::ALL {
         let Some(st) = states.iter().find(|s| s.tag == tag) else {
             continue;
         };

@@ -1,6 +1,6 @@
 //! One row of the transition table.
 
-use crate::{ActionOf, KindOf, MachineSpec};
+use crate::{ActionOf, Enumerable, KindOf, MachineSpec};
 
 use super::Expr;
 
@@ -24,9 +24,10 @@ impl<M: MachineSpec> Source<M> {
     }
 
     /// Expands this source into its concrete list of states, for diagrams and
-    /// coverage checking.
+    /// coverage checking. Walks every value of `M::Tag`, so it agrees with
+    /// [`Source::matches`] even where [`MachineSpec::all_tags`] is narrowed.
     pub fn expand(&self) -> Vec<M::Tag> {
-        M::all_tags()
+        <M::Tag as Enumerable>::ALL
             .iter()
             .copied()
             .filter(|t| self.matches(*t))
@@ -37,7 +38,8 @@ impl<M: MachineSpec> Source<M> {
 /// The target of a transition.
 pub enum Goto<M: MachineSpec> {
     To(M::Tag),
-    /// Stay in the current state. `on_exit` and `on_enter` do **not** run.
+    /// Stay in the current state. [`super::State::exit`] and
+    /// [`super::State::entry`] do **not** run.
     Internal,
 }
 
@@ -71,6 +73,10 @@ pub struct Edge<M: MachineSpec> {
 ///
 /// Declaring these lets coverage checking tell a gap apart from an
 /// intentional omission, so `why` is required.
+///
+/// A combination declared here must carry no [`Edge`] at all, guards included.
+/// [`crate::render::coverage`] reports one that does in
+/// [`crate::render::Coverage::ignored_but_handled`].
 pub struct Ignore<M: MachineSpec> {
     pub from: Source<M>,
     pub when: &'static [KindOf<M>],

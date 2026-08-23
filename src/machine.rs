@@ -127,7 +127,7 @@ impl<M: MachineSpec> Machine<M> {
         }
     }
 
-    /// Returns the current state tag.
+    /// The state the machine is in. Only [`Machine::dispatch`] moves it.
     pub fn tag(&self) -> M::Tag {
         self.tag
     }

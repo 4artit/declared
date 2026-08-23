@@ -182,7 +182,12 @@ fn document() -> String {
     // Both layers at once: the machine's events are not holes.
     let by_fold = fold::handled_kinds();
     let unhandled = feature::unhandled_kinds(FEATURES, &[&by_fold]);
+
+    // `unhandled` is expected to list `UserChanged`, which nothing reacts to.
+    // A defective fold table is not expected, so it fails the run rather than
+    // being written into the document as a line claiming otherwise.
     let cov = fold::coverage();
+    assert!(cov.is_clean(), "{cov:?}");
 
     format!(
         "\

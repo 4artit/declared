@@ -1,6 +1,5 @@
 //! Three-valued logic for guards. `Unknown` means undecidable (e.g. a failed
-//! lookup), kept apart from `False` so the fallback policy is explicit in
-//! [`crate::machine::OnUnknown`] instead of hidden inside a guard.
+//! lookup); [`crate::machine::OnUnknown`] names what an edge does with it.
 
 /// The result of evaluating one guard.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]

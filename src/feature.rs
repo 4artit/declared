@@ -5,9 +5,8 @@ use crate::{Domain, Enumerable, HasKind};
 
 /// What a feature reacts to and what it emits.
 ///
-/// A plain value rather than associated constants, so features can be
-/// collected into a slice for [`crate::render::io_table`] (associated
-/// constants aren't object-safe).
+/// A plain value, so features can be collected into a slice for
+/// [`crate::render::io_table`].
 pub struct FeatureInfo<D: Domain> {
     /// Display name, used in tables and diagrams.
     pub name: &'static str,
@@ -22,9 +21,8 @@ pub trait Feature<D: Domain> {
     /// This feature's declared inputs and outputs.
     const INFO: FeatureInfo<D>;
 
-    /// Reacts to `ev` by pushing effects onto `out`, rather than carrying them
-    /// out directly — [`dispatch`] checks each one against
-    /// [`FeatureInfo::emits`] before [`Domain::perform`] runs it.
+    /// Reacts to `ev` by pushing effects onto `out`. [`dispatch`] checks each
+    /// one against [`FeatureInfo::emits`] before [`Domain::perform`] runs it.
     ///
     /// - `ev`: the event to react to.
     /// - `world`: the outside world, read-only.

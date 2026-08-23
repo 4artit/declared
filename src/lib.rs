@@ -80,8 +80,9 @@ pub trait Domain: Sized + 'static {
     /// - `world`: the outside world to mutate.
     fn perform_state(action: Self::StateAction, world: &mut Self::Env);
 
-    /// Every event kind, for [`render::coverage`]. Defaults to
-    /// [`Enumerable::ALL`]; override only to check a subset.
+    /// The event kinds [`render::coverage`] walks. Defaults to
+    /// [`Enumerable::ALL`]; override only to check a subset. It scopes the
+    /// check alone — dispatch still matches every kind.
     fn all_kinds() -> &'static [Self::EventKind] {
         <Self::EventKind as Enumerable>::ALL
     }
@@ -101,8 +102,7 @@ pub trait Domain: Sized + 'static {
 pub enum NoAction {}
 
 /// One state machine's shape: which [`Domain`] it belongs to and what its
-/// states are. Kept separate from `Domain` so a controller can declare
-/// several machines sharing one domain, or none at all.
+/// states are. A domain may name several of these, or none.
 pub trait MachineSpec: Sized + 'static {
     /// The vocabulary this machine works in.
     type Domain: Domain;
@@ -111,8 +111,9 @@ pub trait MachineSpec: Sized + 'static {
     /// [`Enumerable`] impl.
     type Tag: Enumerable;
 
-    /// Every state, for [`render::coverage`]. Defaults to [`Enumerable::ALL`];
-    /// override only to check a subset.
+    /// The states [`render::coverage`] walks. Defaults to [`Enumerable::ALL`];
+    /// override only to check a subset. It scopes the check alone — dispatch
+    /// and the diagrams still cover every tag.
     fn all_tags() -> &'static [Self::Tag] {
         <Self::Tag as Enumerable>::ALL
     }

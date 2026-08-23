@@ -10,8 +10,7 @@ use super::Cond;
 /// One transition guard.
 ///
 /// Nodes are stateless: `eval` takes `&self`, and every input arrives
-/// through [`Cx`]. That keeps a node testable as a pure function and makes
-/// the [`Memo`] cache safe to share across edges.
+/// through [`Cx`].
 pub trait CondNode<D: Domain>: Sync + Any {
     /// The name shown in diagrams and logs, and the [`Memo`] cache key.
     /// **Must be unique within a machine** — [`crate::render::coverage`]
@@ -35,7 +34,6 @@ pub struct Cx<'a, D: Domain> {
 }
 
 impl<'a, D: Domain> Cx<'a, D> {
-    /// Builds a context from an event, a world reference, and a memo cache.
     pub fn new(event: &'a D::Event, world: &'a D::Env, memo: &'a Memo) -> Self {
         Self { event, world, memo }
     }
@@ -49,12 +47,10 @@ pub struct Memo {
 }
 
 impl Memo {
-    /// Builds an empty cache.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Returns the cached result for `name`, if any.
     fn lookup(&self, name: &'static str) -> Option<Cond> {
         self.cache
             .borrow()
@@ -63,7 +59,6 @@ impl Memo {
             .map(|(_, c)| *c)
     }
 
-    /// Caches `cond` under `name`.
     fn store(&self, name: &'static str, cond: Cond) {
         self.cache.borrow_mut().push((name, cond));
     }
@@ -168,9 +163,7 @@ macro_rules! cond_node {
 
 /// Builds a guard expression. Supports `&&` chains and a leading `!`.
 ///
-/// `||` is deliberately omitted: supporting it complicates the macro rules well
-/// out of proportion to how often it is needed. Use [`Expr::Or`] directly when
-/// required.
+/// `||` is not supported; use [`Expr::Or`] directly.
 #[macro_export]
 macro_rules! check {
     () => { &$crate::machine::Expr::Always };

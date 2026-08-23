@@ -426,8 +426,8 @@ fn caller_side_queue_processes_events_in_order() {
 fn perform_sees_the_event_on_an_internal_transition() {
     let (mut m, mut w) = showing();
 
-    // CAM_OVERLAY is Goto::Internal, so neither on_enter nor on_exit runs. Its
-    // action can still read the event, which is the only route to a payload here
+    // CAM_OVERLAY is Goto::Internal, so neither entry nor exit runs. Its action
+    // can still read the event, which is the only route to a payload here
     // because Edge::run holds compile-time constants only.
     let taken = m.dispatch(&Event::SpeedChanged, &mut w).unwrap();
 
@@ -646,10 +646,22 @@ fn an_edge_targeting_a_tag_outside_the_state_table_is_rejected() {
     let _ = Machine::new(Tag::Off, PARTIAL_STATES, PARTIAL_EDGES, PARTIAL_IGNORES);
 }
 
+/// `all_tags` narrows the coverage check, nothing else. `expand` walks every tag
+/// so that diagrams keep matching what `matches` does at dispatch.
+#[test]
+fn expand_covers_every_tag_even_where_all_tags_is_narrowed() {
+    assert_eq!(PartialCam::all_tags(), &[Tag::Off]);
+
+    let any: Source<PartialCam> = Source::Any;
+    assert_eq!(any.expand(), vec![Tag::Off, Tag::Showing]);
+    assert!(any.matches(Tag::Showing));
+}
+
 // ─────────────────────────────────────────── defective table
 // RearCam is deliberately clean, so the diagnostics never fire on it. This table
-// trips each of them: a hole, an unreachable state, and one guard name shared by
-// three node types.
+// trips each of them: a hole, an unreachable state, one guard name shared by
+// three node types, one id shared by two edges, and an `Ignore` an edge
+// contradicts.
 
 struct Broken;
 
@@ -730,7 +742,23 @@ static BROKEN_EDGES: &[Edge<Broken>] = &[
         run: &[],
         goto: Goto::Internal,
     },
+    Edge {
+        id: "NO_GUARD", // the id is already taken
+        from: Source::These(&[Tag::Off]),
+        when: Kind::SpeedChanged,
+        check: crate::check!(),
+        unknown: OnUnknown::Deny,
+        run: &[],
+        goto: Goto::To(Tag::Off),
+    },
 ];
+
+/// `GearChanged` is declared off limits in `Off`, but `NO_GUARD` handles it.
+static BROKEN_IGNORES: &[Ignore<Broken>] = &[Ignore {
+    from: Source::These(&[Tag::Off]),
+    when: &[Kind::GearChanged],
+    why: "test: contradicted by an edge",
+}];
 
 #[test]
 fn coverage_reports_holes_unreachable_states_and_duplicate_names() {
@@ -747,6 +775,28 @@ fn coverage_reports_holes_unreachable_states_and_duplicate_names() {
     assert_eq!(c.unreachable, vec!["Showing"]);
     // Reported once, however many types share the name.
     assert_eq!(c.duplicate_node_names, vec!["Duplicate"]);
+}
+
+/// The id has to survive reordering of the table, so two edges may not share it.
+#[test]
+fn coverage_reports_a_duplicate_edge_id() {
+    let c = render::coverage::<Broken>(Tag::Off, BROKEN_EDGES, &[]);
+
+    assert_eq!(c.duplicate_edge_ids, vec!["NO_GUARD"]);
+    assert!(!c.is_clean());
+}
+
+/// An `Ignore` bans a combination outright, so an edge on it is a defect however
+/// the edge is guarded.
+#[test]
+fn coverage_reports_an_ignore_an_edge_contradicts() {
+    let c = render::coverage::<Broken>(Tag::Off, BROKEN_EDGES, BROKEN_IGNORES);
+
+    assert_eq!(
+        c.ignored_but_handled,
+        vec![("Off".to_owned(), "GearChanged".to_owned(), vec!["NO_GUARD"])]
+    );
+    assert!(!c.is_clean());
 }
 
 #[test]
