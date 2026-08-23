@@ -97,11 +97,25 @@ pub trait Domain: Sized + 'static {
 /// An effect vocabulary with no values, for a domain that uses only the other
 /// one.
 ///
-/// ```ignore
-/// type Action = chart::NoAction;
+/// ```
+/// # chart::events! { #[derive(Debug)] pub enum Event => Kind { Tick } }
+/// # #[derive(Copy, Clone, Debug)]
+/// # pub enum StateAction { Log }
+/// # pub struct Env;
+/// # pub struct Dom;
+/// use chart::NoAction;
 ///
-/// fn perform(action: NoAction, _ev: &Event, _world: &mut Env) {
-///     match action {}
+/// impl chart::Domain for Dom {
+/// #   type Event = Event;
+/// #   type EventKind = Kind;
+/// #   type StateAction = StateAction;
+/// #   type Env = Env;
+///     type Action = NoAction;
+///
+///     fn perform(action: NoAction, _ev: &Event, _world: &mut Env) {
+///         match action {}
+///     }
+/// #   fn perform_state(_action: StateAction, _world: &mut Env) {}
 /// }
 /// ```
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]

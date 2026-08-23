@@ -64,7 +64,7 @@ impl Memo {
     }
 }
 
-/// A guard expression tree. [`check!`] expands to this shape.
+/// A guard expression tree. [`check!`](crate::check!) expands to this shape.
 pub enum Expr<D: Domain> {
     /// No guard: always true.
     Always,
@@ -138,8 +138,22 @@ impl<D: Domain> Expr<D> {
 
 /// Declares a guard node as a unit struct plus its [`CondNode`] impl.
 ///
-/// ```ignore
-/// cond_node!(RearCam, GearIsReverse, |cx| match cx.event {
+/// ```
+/// # use chart::machine::Cond;
+/// # #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+/// # pub enum Gear { Reverse, Drive }
+/// # chart::events! { #[derive(Debug)] pub enum Event => Kind { GearChanged(Gear), Tick } }
+/// # pub struct RearCam;
+/// # impl chart::Domain for RearCam {
+/// #     type Event = Event;
+/// #     type EventKind = Kind;
+/// #     type Action = chart::NoAction;
+/// #     type StateAction = chart::NoAction;
+/// #     type Env = ();
+/// #     fn perform(a: chart::NoAction, _ev: &Event, _w: &mut ()) { match a {} }
+/// #     fn perform_state(a: chart::NoAction, _w: &mut ()) { match a {} }
+/// # }
+/// chart::cond_node!(RearCam, GearIsReverse, |cx| match cx.event {
 ///     Event::GearChanged(g) => Cond::from(*g == Gear::Reverse),
 ///     _ => Cond::False,
 /// });

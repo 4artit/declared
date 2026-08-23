@@ -7,8 +7,9 @@ use std::fmt::Debug;
 /// Required by [`super::MachineSpec::Tag`] and [`super::Domain::EventKind`], whose
 /// full value lists [`super::verify::coverage`] needs to walk `(state × event
 /// kind)` exhaustively. Implementing this by hand is supported, but nothing
-/// then verifies `ALL` stays complete as variants are added — prefer [`tags!`]
-/// or [`events!`], which generate the enum and `ALL` together.
+/// then verifies `ALL` stays complete as variants are added — prefer
+/// [`tags!`](crate::tags!) or [`events!`](crate::events!), which generate the
+/// enum and `ALL` together.
 pub trait Enumerable: Copy + Eq + Debug + 'static {
     /// Every value of this type.
     const ALL: &'static [Self];
@@ -16,10 +17,17 @@ pub trait Enumerable: Copy + Eq + Debug + 'static {
 
 /// A type that can report its payload-free kind tag.
 ///
-/// Required by [`super::Domain::Event`]. [`events!`] generates a one-to-one impl;
-/// implement it by hand to collapse several event variants into one kind:
+/// Required by [`super::Domain::Event`]. [`events!`](crate::events!) generates
+/// a one-to-one impl; implement it by hand to collapse several event variants
+/// into one kind:
 ///
-/// ```ignore
+/// ```
+/// # #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+/// # pub enum Kind { TiltAdjust, Gear }
+/// # impl chart::Enumerable for Kind {
+/// #     const ALL: &'static [Self] = &[Self::TiltAdjust, Self::Gear];
+/// # }
+/// # pub enum Event { TiltUp, TiltDown, Gear(u8) }
 /// impl chart::HasKind for Event {
 ///     type Kind = Kind;
 ///     fn kind(&self) -> Kind {
@@ -46,7 +54,7 @@ pub trait HasKind {
 /// Derives `Copy + Clone + PartialEq + Eq + Debug` on the enum and forwards
 /// any outer attributes.
 ///
-/// ```ignore
+/// ```
 /// chart::tags! {
 ///     pub enum Tag {
 ///         Locked,
@@ -86,7 +94,7 @@ macro_rules! tags {
 /// forwarded), `enum Kind` (the payload-free tag, with `Copy + Eq + Debug`
 /// derived), `impl HasKind for Event`, and `impl Enumerable for Kind`.
 ///
-/// ```ignore
+/// ```
 /// chart::events! {
 ///     #[derive(Clone, Debug)]
 ///     pub enum Event => Kind {
