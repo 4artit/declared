@@ -13,7 +13,7 @@
 //! clearing is left to `Unlocked`'s exit.
 
 use chart::machine::{Cond, Edge, Goto, Ignore, Machine, OnUnknown, Source, State};
-use chart::{Domain, MachineSpec, render};
+use chart::{Domain, MachineSpec, render, verify};
 
 chart::tags! {
     enum Tag {
@@ -278,7 +278,7 @@ fn main() {
     println!("\nmermaid diagram written to examples/door_lock/door_lock.md");
 
     // A defect fails the run rather than scrolling past in the output.
-    let coverage = render::coverage::<Door>(Tag::Locked, EDGES, IGNORES);
+    let coverage = verify::coverage::<Door>(Tag::Locked, EDGES, IGNORES);
     assert!(coverage.is_clean(), "{coverage:?}");
     println!("coverage: clean");
 }

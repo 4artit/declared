@@ -128,7 +128,7 @@ Bigger examples:
 - **A diagram.** `render::to_mermaid` turns the transition table into a
   `stateDiagram-v2` you can drop straight into docs, or convert to PlantUML
   with `scripts/mermaid_to_plantuml.sh`.
-- **A gap check.** `render::coverage` walks every `(state, event)`
+- **A gap check.** `verify::coverage` walks every `(state, event)`
   combination and reports the ones with no edge and no declared `Ignore`.
   Assert `is_clean()` in a test, and a forgotten case fails CI instead of
   surfacing in production.

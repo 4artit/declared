@@ -1,3 +1,4 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 //! A declarative controller framework.
 //!
 //! A controller declares what it reacts to and what it does about it as static
@@ -10,7 +11,8 @@
 //! |---|---|
 //! | [`feature`] | Controllers with no states: what each feature reacts to and emits |
 //! | [`machine`] | Controllers with states: a transition table and its executor |
-//! | [`render`] | Diagrams and gap reports derived from either declaration |
+//! | [`render`] | Diagrams and tables derived from either declaration |
+//! | [`verify`] | Exhaustive gap reports over either declaration |
 //!
 //! [`Domain`] bundles the types a controller works with and is shared by both
 //! layers, so a feature that grows states keeps the same declaration. It holds
@@ -30,7 +32,11 @@ mod enums;
 
 pub mod feature;
 pub mod machine;
+// Builds diagrams and tables for documentation only: no release binary reaches
+// it, and the committed `.md` files verify its output instead.
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub mod render;
+pub mod verify;
 
 #[cfg(test)]
 mod tests;
@@ -80,7 +86,7 @@ pub trait Domain: Sized + 'static {
     /// - `world`: the outside world to mutate.
     fn perform_state(action: Self::StateAction, world: &mut Self::Env);
 
-    /// The event kinds [`render::coverage`] walks. Defaults to
+    /// The event kinds [`verify::coverage`] walks. Defaults to
     /// [`Enumerable::ALL`]; override only to check a subset. It scopes the
     /// check alone — dispatch still matches every kind.
     fn all_kinds() -> &'static [Self::EventKind] {
@@ -111,7 +117,7 @@ pub trait MachineSpec: Sized + 'static {
     /// [`Enumerable`] impl.
     type Tag: Enumerable;
 
-    /// The states [`render::coverage`] walks. Defaults to [`Enumerable::ALL`];
+    /// The states [`verify::coverage`] walks. Defaults to [`Enumerable::ALL`];
     /// override only to check a subset. It scopes the check alone — dispatch
     /// and the diagrams still cover every tag.
     fn all_tags() -> &'static [Self::Tag] {

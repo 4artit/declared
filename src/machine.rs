@@ -11,7 +11,7 @@ pub use node::{CondNode, Cx, Expr, Memo};
 pub use state::State;
 
 use crate::{
-    ActionOf, Domain, EnvOf, EventOf, HasKind, KindOf, MachineSpec, StateActionOf, render,
+    ActionOf, Domain, EnvOf, EventOf, HasKind, KindOf, MachineSpec, StateActionOf, verify,
 };
 
 /// The outcome of one [`Machine::dispatch`] call, for tests and logs.
@@ -85,8 +85,8 @@ impl<M: MachineSpec> Machine<M> {
     ///
     /// Panics if `initial`, or any tag [`MachineSpec::all_tags`] lists, or any
     /// edge target, is missing from `states`. In debug builds, also panics if
-    /// [`render::coverage`] reports a defect (release builds skip that check;
-    /// call [`render::coverage`] from a test to keep it enforced there).
+    /// [`verify::coverage`] reports a defect (release builds skip that check;
+    /// call [`verify::coverage`] from a test to keep it enforced there).
     pub fn new(
         initial: M::Tag,
         states: &'static [State<M>],
@@ -115,7 +115,7 @@ impl<M: MachineSpec> Machine<M> {
 
         #[cfg(debug_assertions)]
         {
-            let cov = render::coverage::<M>(initial, edges, ignores);
+            let cov = verify::coverage::<M>(initial, edges, ignores);
             assert!(cov.is_clean(), "[chart] table has holes: {cov:?}");
         }
 
@@ -135,10 +135,12 @@ impl<M: MachineSpec> Machine<M> {
     /// Looks up the state table entry for `tag`. `new` guarantees every tag
     /// this is called with is present, so the miss arm is unreachable.
     fn state_of(&self, tag: M::Tag) -> &'static State<M> {
-        self.states
-            .iter()
-            .find(|s| s.tag == tag)
-            .unwrap_or_else(|| unreachable!("no state table entry for {tag:?}"))
+        self.states.iter().find(|s| s.tag == tag).unwrap_or_else(
+            // `new` checks every tag against the state table, so this arm
+            // cannot be reached.
+            #[cfg_attr(coverage_nightly, coverage(off))]
+            || unreachable!("no state table entry for {tag:?}"),
+        )
     }
 
     /// Matches `ev` against the table from the current state and runs the

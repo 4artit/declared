@@ -5,7 +5,7 @@ use std::fmt::Debug;
 /// A type whose values can all be listed at compile time.
 ///
 /// Required by [`super::MachineSpec::Tag`] and [`super::Domain::EventKind`], whose
-/// full value lists [`super::render::coverage`] needs to walk `(state × event
+/// full value lists [`super::verify::coverage`] needs to walk `(state × event
 /// kind)` exhaustively. Implementing this by hand is supported, but nothing
 /// then verifies `ALL` stays complete as variants are added — prefer [`tags!`]
 /// or [`events!`], which generate the enum and `ALL` together.

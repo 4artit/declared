@@ -124,7 +124,7 @@ fn main() {
   그대로 읽는다 — 표와 어긋날 수 있는 별도의 해석 단계가 없다.
 - **다이어그램.** `render::to_mermaid`가 전이 표를 `stateDiagram-v2`로
   뽑아내고, `scripts/mermaid_to_plantuml.sh`로 PlantUML로도 바꿀 수 있다.
-- **누락 검사.** `render::coverage`가 `(상태, 이벤트)` 조합을 전수
+- **누락 검사.** `verify::coverage`가 `(상태, 이벤트)` 조합을 전수
   순회해 엣지도 `Ignore`도 없는 것을 찾아낸다. 테스트에서 `is_clean()`을
   assert 해 두면, 빠뜨린 케이스가 운영 환경이 아니라 CI에서 걸린다.
 - **실패를 인정하는 조건.** 조건 판정은 `bool`이 아니라

@@ -5,3 +5,6 @@ edition = "2024"
 
 [dependencies]
 log = "0.4"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)', 'cfg(coverage_nightly)'] }

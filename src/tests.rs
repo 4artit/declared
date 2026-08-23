@@ -10,8 +10,10 @@
 use std::cell::Cell;
 
 use super::feature::{self, Feature, FeatureInfo};
-use super::machine::{Cond, Cx, Edge, Expr, Goto, Ignore, Machine, Memo, OnUnknown, Source, State};
-use super::{Domain, Enumerable, HasKind, MachineSpec, render};
+use super::machine::{
+    Cond, Cx, Edge, Expr, Goto, Ignore, Machine, Memo, OnUnknown, Source, State, Taken,
+};
+use super::{Domain, Enumerable, HasKind, MachineSpec, render, verify};
 
 // ─────────────────────────────────────────── domain
 
@@ -268,6 +270,41 @@ fn taken_is_debug_clone_and_eq() {
     assert_ne!(off, on);
 }
 
+/// Two transitions can share an edge id only by mistake, so `eq` compares the
+/// action lists as well. Values differing only after `edge` prove it reads them.
+#[test]
+fn taken_eq_compares_every_field() {
+    let base: Taken<RearCam> = Taken {
+        edge: "CAM_ON",
+        exit: &[],
+        run: &[],
+        entry: &[],
+    };
+
+    assert_eq!(base, base);
+    assert_ne!(
+        base,
+        Taken {
+            exit: &[Action::HideCamera],
+            ..base
+        }
+    );
+    assert_ne!(
+        base,
+        Taken {
+            run: &[Action::UpdateOverlay],
+            ..base
+        }
+    );
+    assert_ne!(
+        base,
+        Taken {
+            entry: &[Action::ShowCamera],
+            ..base
+        }
+    );
+}
+
 #[test]
 fn exit_action_runs_on_leaving() {
     let (mut m, mut w) = showing();
@@ -359,7 +396,7 @@ fn declared_ignore_is_not_a_hole() {
 
 #[test]
 fn coverage_has_no_holes_and_no_unreachable_state() {
-    let c = render::coverage::<RearCam>(Tag::Off, EDGES, IGNORES);
+    let c = verify::coverage::<RearCam>(Tag::Off, EDGES, IGNORES);
 
     assert!(c.holes.is_empty(), "holes: {:?}", c.holes);
     assert!(c.unreachable.is_empty(), "unreachable: {:?}", c.unreachable);
@@ -646,6 +683,17 @@ fn an_edge_targeting_a_tag_outside_the_state_table_is_rejected() {
     let _ = Machine::new(Tag::Off, PARTIAL_STATES, PARTIAL_EDGES, PARTIAL_IGNORES);
 }
 
+/// Narrowing `all_tags` scopes the walk: only `Off` is checked, so `Showing`
+/// shows up as neither a hole nor unreachable.
+#[test]
+fn a_narrowed_spec_checks_only_the_listed_tags() {
+    let c = verify::coverage::<PartialCam>(Tag::Off, PARTIAL_EDGES, PARTIAL_IGNORES);
+
+    assert!(c.holes.is_empty(), "{:?}", c.holes);
+    assert!(c.unreachable.is_empty(), "{:?}", c.unreachable);
+    assert!(c.is_clean());
+}
+
 /// `all_tags` narrows the coverage check, nothing else. `expand` walks every tag
 /// so that diagrams keep matching what `matches` does at dispatch.
 #[test]
@@ -655,6 +703,156 @@ fn expand_covers_every_tag_even_where_all_tags_is_narrowed() {
     let any: Source<PartialCam> = Source::Any;
     assert_eq!(any.expand(), vec![Tag::Off, Tag::Showing]);
     assert!(any.matches(Tag::Showing));
+}
+
+// ─────────────────────────────────────────── every defect at once
+// `coverage` is generic, so each spec it is used with is compiled separately.
+// Feeding a table carrying every defect class through the main fixture keeps
+// that copy exercised end to end.
+
+crate::cond_node!(RearCam, Duplicated, |_cx| Cond::True);
+
+struct AlsoDuplicated;
+struct StillDuplicated;
+
+impl crate::machine::CondNode<RearCam> for AlsoDuplicated {
+    fn name(&self) -> &'static str {
+        "Duplicated"
+    }
+    fn eval(&self, _cx: &Cx<'_, RearCam>) -> Cond {
+        Cond::True
+    }
+}
+
+// A third type on the same name, so the report is proved to list it once.
+impl crate::machine::CondNode<RearCam> for StillDuplicated {
+    fn name(&self) -> &'static str {
+        "Duplicated"
+    }
+    fn eval(&self, _cx: &Cx<'_, RearCam>) -> Cond {
+        Cond::True
+    }
+}
+
+static DEFECTIVE_EDGES: &[Edge<RearCam>] = &[
+    Edge {
+        id: "DUPED",
+        from: Source::These(&[Tag::Off]),
+        when: Kind::GearChanged,
+        check: crate::check!(),
+        unknown: OnUnknown::Deny,
+        run: &[],
+        goto: Goto::To(Tag::Off),
+    },
+    Edge {
+        id: "DUPED", // same id, and a second edge on the same combination
+        from: Source::These(&[Tag::Off]),
+        when: Kind::GearChanged,
+        check: crate::check!(),
+        unknown: OnUnknown::Deny,
+        run: &[],
+        goto: Goto::Internal,
+    },
+    Edge {
+        id: "DUPED", // a third, to be reported once
+        from: Source::These(&[Tag::Off]),
+        when: Kind::SpeedChanged,
+        check: &Expr::And(
+            &Expr::Node(&Duplicated),
+            &Expr::And(&Expr::Node(&AlsoDuplicated), &Expr::Node(&StillDuplicated)),
+        ),
+        unknown: OnUnknown::Deny,
+        run: &[],
+        goto: Goto::To(Tag::Off),
+    },
+    Edge {
+        id: "STUCK", // leaves and enters a state nothing else reaches
+        from: Source::These(&[Tag::Showing]),
+        when: Kind::PowerChanged,
+        check: crate::check!(),
+        unknown: OnUnknown::Deny,
+        run: &[],
+        goto: Goto::To(Tag::Showing),
+    },
+];
+
+static DEFECTIVE_IGNORES: &[Ignore<RearCam>] = &[Ignore {
+    from: Source::These(&[Tag::Off]),
+    when: &[Kind::GearChanged],
+    why: "test: contradicted by two edges",
+}];
+
+#[test]
+fn coverage_reports_every_defect_class_from_one_table() {
+    let c = verify::coverage::<RearCam>(Tag::Off, DEFECTIVE_EDGES, DEFECTIVE_IGNORES);
+
+    assert!(!c.is_clean());
+    assert_eq!(c.duplicate_edge_ids, vec!["DUPED"]);
+    assert_eq!(c.duplicate_node_names, vec!["Duplicated"]);
+    assert_eq!(c.unreachable, vec!["Showing"]);
+    assert_eq!(
+        c.ignored_but_handled,
+        vec![(
+            "Off".to_owned(),
+            "GearChanged".to_owned(),
+            vec!["DUPED", "DUPED"]
+        )]
+    );
+    assert!(
+        c.holes
+            .contains(&("Off".to_owned(), "PowerChanged".to_owned())),
+        "{:?}",
+        c.holes
+    );
+    assert_eq!(c.overlaps.len(), 1, "{:?}", c.overlaps);
+}
+
+// ─────────────────────────────────────────── reachability chain
+// Reachability iterates to a fixed point, so a chain whose edges are declared
+// out of order takes more than one pass over the table.
+
+crate::tags! {
+    enum ChainTag {
+        First,
+        Middle,
+        Last,
+    }
+}
+
+struct ChainSm;
+
+impl MachineSpec for ChainSm {
+    type Domain = RearCam;
+    type Tag = ChainTag;
+}
+
+static CHAIN_EDGES: &[Edge<ChainSm>] = &[
+    // Declared before the edge that makes `Middle` reachable at all.
+    Edge {
+        id: "MIDDLE_TO_LAST",
+        from: Source::These(&[ChainTag::Middle]),
+        when: Kind::SpeedChanged,
+        check: crate::check!(),
+        unknown: OnUnknown::Deny,
+        run: &[],
+        goto: Goto::To(ChainTag::Last),
+    },
+    Edge {
+        id: "FIRST_TO_MIDDLE",
+        from: Source::These(&[ChainTag::First]),
+        when: Kind::GearChanged,
+        check: crate::check!(),
+        unknown: OnUnknown::Deny,
+        run: &[],
+        goto: Goto::To(ChainTag::Middle),
+    },
+];
+
+#[test]
+fn reachability_follows_a_chain_declared_out_of_order() {
+    let c = verify::coverage::<ChainSm>(ChainTag::First, CHAIN_EDGES, &[]);
+
+    assert!(c.unreachable.is_empty(), "{:?}", c.unreachable);
 }
 
 // ─────────────────────────────────────────── defective table
@@ -751,6 +949,15 @@ static BROKEN_EDGES: &[Edge<Broken>] = &[
         run: &[],
         goto: Goto::To(Tag::Off),
     },
+    Edge {
+        id: "NO_GUARD", // and taken a third time, to be reported once
+        from: Source::These(&[Tag::Off]),
+        when: Kind::PowerChanged,
+        check: crate::check!(),
+        unknown: OnUnknown::Deny,
+        run: &[],
+        goto: Goto::To(Tag::Off),
+    },
 ];
 
 /// `GearChanged` is declared off limits in `Off`, but `NO_GUARD` handles it.
@@ -762,7 +969,7 @@ static BROKEN_IGNORES: &[Ignore<Broken>] = &[Ignore {
 
 #[test]
 fn coverage_reports_holes_unreachable_states_and_duplicate_names() {
-    let c = render::coverage::<Broken>(Tag::Off, BROKEN_EDGES, &[]);
+    let c = verify::coverage::<Broken>(Tag::Off, BROKEN_EDGES, &[]);
 
     assert!(!c.is_clean());
     // Nothing is declared for Showing at all.
@@ -780,17 +987,41 @@ fn coverage_reports_holes_unreachable_states_and_duplicate_names() {
 /// The id has to survive reordering of the table, so two edges may not share it.
 #[test]
 fn coverage_reports_a_duplicate_edge_id() {
-    let c = render::coverage::<Broken>(Tag::Off, BROKEN_EDGES, &[]);
+    let c = verify::coverage::<Broken>(Tag::Off, BROKEN_EDGES, &[]);
 
     assert_eq!(c.duplicate_edge_ids, vec!["NO_GUARD"]);
     assert!(!c.is_clean());
+}
+
+/// Each defect list vetoes `is_clean` on its own. A table carrying several at
+/// once cannot show that, since the first empty check short-circuits the rest.
+#[test]
+fn is_clean_requires_every_defect_list_to_be_empty() {
+    fn with(fill: impl FnOnce(&mut verify::Coverage)) -> verify::Coverage {
+        let mut c = verify::Coverage::default();
+        fill(&mut c);
+        c
+    }
+    let state = || "Off".to_owned();
+    let kind = || "GearChanged".to_owned();
+
+    assert!(verify::Coverage::default().is_clean());
+
+    assert!(!with(|c| c.holes.push((state(), kind()))).is_clean());
+    assert!(!with(|c| c.ignored_but_handled.push((state(), kind(), vec!["E"]))).is_clean());
+    assert!(!with(|c| c.unreachable.push(state())).is_clean());
+    assert!(!with(|c| c.duplicate_node_names.push("Dup")).is_clean());
+    assert!(!with(|c| c.duplicate_edge_ids.push("E")).is_clean());
+
+    // A review signal, not a defect.
+    assert!(with(|c| c.overlaps.push((state(), kind(), vec!["A", "B"]))).is_clean());
 }
 
 /// An `Ignore` bans a combination outright, so an edge on it is a defect however
 /// the edge is guarded.
 #[test]
 fn coverage_reports_an_ignore_an_edge_contradicts() {
-    let c = render::coverage::<Broken>(Tag::Off, BROKEN_EDGES, BROKEN_IGNORES);
+    let c = verify::coverage::<Broken>(Tag::Off, BROKEN_EDGES, BROKEN_IGNORES);
 
     assert_eq!(
         c.ignored_but_handled,
@@ -891,6 +1122,20 @@ fn io_table_lists_each_feature() {
     );
 }
 
+/// A column with nothing in it renders as a dash rather than an empty cell.
+#[test]
+fn io_table_dashes_a_feature_that_declares_nothing() {
+    let idle: &[FeatureInfo<RearCam>] = &[FeatureInfo {
+        name: "Idle",
+        handles: &[],
+        emits: &[],
+    }];
+
+    let table = render::io_table(idle);
+
+    assert!(table.contains("| `Idle` | — | — |"), "{table}");
+}
+
 #[test]
 fn io_flowchart_keeps_features_and_actions_apart() {
     let chart = render::io_flowchart(CAMERA_FEATURES);
@@ -912,7 +1157,7 @@ fn unhandled_kinds_reports_what_no_feature_takes() {
 /// not make a kind handled — the table only says the machine has no use for it.
 #[test]
 fn unhandled_kinds_counts_edges_but_not_ignores() {
-    let by_machine = render::handled_kinds::<RearCam>(EDGES);
+    let by_machine = verify::handled_kinds::<RearCam>(EDGES);
 
     assert!(by_machine.contains(&Kind::GearChanged));
     assert!(
@@ -949,6 +1194,17 @@ impl Feature<RearCam> for Liar {
     fn handle(&mut self, _ev: &Event, _world: &Env, out: &mut Vec<Action>) {
         out.push(Action::UpdateOverlay);
     }
+}
+
+/// The declared-kind gate runs before the handler, so a feature that would lie
+/// is never given the chance on a kind it did not declare.
+#[test]
+fn dispatch_skips_an_undeclared_kind_before_the_handler() {
+    let mut out = Vec::new();
+
+    feature::dispatch(&mut Liar, &Event::SpeedChanged, &Env::default(), &mut out);
+
+    assert!(out.is_empty());
 }
 
 #[test]

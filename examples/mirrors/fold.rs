@@ -5,8 +5,8 @@
 //! events, actions, guards and `perform`.
 
 use chart::machine::{Cond, Edge, Goto, Ignore, Machine, OnUnknown, Source, State};
-use chart::render::Coverage;
-use chart::{MachineSpec, render};
+use chart::verify::Coverage;
+use chart::{MachineSpec, render, verify};
 
 use crate::{Event, Kind, Mirrors, StateAction, World};
 
@@ -171,9 +171,9 @@ pub fn diagram() -> String {
 
 /// The kinds this machine acts on, for the controller-wide check.
 pub fn handled_kinds() -> Vec<Kind> {
-    render::handled_kinds::<FoldSm>(EDGES)
+    verify::handled_kinds::<FoldSm>(EDGES)
 }
 
 pub fn coverage() -> Coverage {
-    render::coverage::<FoldSm>(FoldTag::Unfolded, EDGES, IGNORES)
+    verify::coverage::<FoldSm>(FoldTag::Unfolded, EDGES, IGNORES)
 }

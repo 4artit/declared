@@ -62,7 +62,7 @@ where
 ///
 /// - `features`: the controller's feature list.
 /// - `elsewhere`: kinds handled outside that list, e.g.
-///   [`crate::render::handled_kinds`] for each state machine the controller also
+///   [`crate::verify::handled_kinds`] for each state machine the controller also
 ///   runs; pass `&[]` if there are none.
 ///
 /// Returns the event kinds handled by neither `features` nor `elsewhere`.
