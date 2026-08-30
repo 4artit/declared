@@ -63,9 +63,18 @@ struct Light;
 impl Domain for Light {
     type Event = Event;
     type EventKind = Kind;
+    type Env = Env;
+}
+
+impl MachineSpec for Light {
+    type Domain = Light;
+    type Tag = Tag;
     type Action = Action;
     type StateAction = StateAction;
-    type Env = Env;
+
+    const STATES: &'static [State<Light>] = STATES;
+    const EDGES: &'static [Edge<Light>] = EDGES;
+    const IGNORES: &'static [Ignore<Light>] = IGNORES;
 
     fn perform(action: Action, _ev: &Event, _world: &mut Env) {
         match action {
@@ -79,15 +88,6 @@ impl Domain for Light {
             StateAction::TurnOff => println!("off"),
         }
     }
-}
-
-impl MachineSpec for Light {
-    type Domain = Light;
-    type Tag = Tag;
-
-    const STATES: &'static [State<Light>] = STATES;
-    const EDGES: &'static [Edge<Light>] = EDGES;
-    const IGNORES: &'static [Ignore<Light>] = IGNORES;
 }
 
 static STATES: &[State<Light>] = &[
@@ -135,12 +135,17 @@ fn main() {
   `True`/`False`/`Unknown` 세 값이고, 판정 불가일 때의 정책은
   `Edge::unknown`에 명시된다 — 가드 함수 안에 숨는 대신 다이어그램에
   드러난다.
-- **추적 가능한 부수효과.** 바깥 세상은 `Domain::perform`과
-  `Domain::perform_state`에서만 바뀐다. 그래서 한 번의 dispatch가 만든 모든
-  효과는 로그로 남기거나 검증할 수 있는 평범한 값이다.
+- **추적 가능한 부수효과.** 바깥 세상은 `perform`에서만 바뀐다. 그래서 한 번의
+  dispatch가 만든 모든 효과는 로그로 남기거나 검증할 수 있는 평범한 값이다.
+- **효과의 주인은 그것을 낸 쪽이다.** 기능과 머신이 각자 액션 타입을 가지므로
+  (`Feature::Action`, `MachineSpec::Action`) 모든 `perform`은 자기 파일이
+  선언한 효과에 대해 정확히 exhaustive하다. 액션을 추가하면 그 파일에서만
+  컴파일이 깨지고, 어떤 파일도 남의 효과를 들고 있지 않다. `Domain`에는 정말로
+  공유되는 것 — 이벤트와 세상 — 만 남는다.
 - **이벤트를 볼 수 없는 진입 동작.** 진입/이탈은 어느 엣지로 들어왔든
-  실행되므로 별도 어휘 `Domain::StateAction`을 쓰고, `perform_state`는 이벤트를
-  받지 않는다 — 이벤트가 필요한 효과는 엣지로 간다.
+  실행되므로 별도 어휘 `MachineSpec::StateAction`을 쓰고, `perform_state`는
+  이벤트를 받지 않는다 — 이벤트가 필요한 효과는 엣지로 간다. 상태를 가진 건
+  머신뿐이므로 이 어휘는 머신에 붙는다.
 
 ## 프로젝트 구조
 
@@ -149,7 +154,7 @@ src/
   lib.rs          // Domain, MachineSpec — 라이브러리 진입점
   guard.rs        // 두 층이 함께 쓰는 조건: Cond, OnUnknown
   guard/          // CondNode, Cx, Memo, Expr
-  feature.rs      // 상태 없는 층: Rule, FeatureInfo, dispatch
+  feature.rs      // 상태 없는 층: Feature, Rule, AnyFeature
   machine.rs      // 상태 있는 층: Machine, dispatch, Taken
   machine/        // State, Edge, Source, Goto, Ignore
   render.rs       // to_mermaid, coverage, io_table, rule_table, io_flowchart

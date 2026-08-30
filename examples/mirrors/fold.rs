@@ -10,7 +10,7 @@ use chart::verify::Coverage;
 use chart::{MachineSpec, render, verify};
 
 use crate::guards::{AtFolded, AtUnfolded, PowerOff, PowerOn, SpeedAllowsFold, SpeedForcesUnfold};
-use crate::{Kind, Mirrors, StateAction};
+use crate::{Event, Kind, Mirrors, World};
 
 chart::tags! {
     pub enum FoldTag {
@@ -21,15 +21,39 @@ chart::tags! {
     }
 }
 
+/// Effects of this machine being in a state, run whichever edge led there.
+/// Declared here rather than on the domain: only a machine has states.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum StateAction {
+    Fold,
+    Unfold,
+}
+
 pub struct FoldSm;
 
 impl MachineSpec for FoldSm {
     type Domain = Mirrors;
     type Tag = FoldTag;
+    type Action = chart::NoAction;
+    type StateAction = StateAction;
 
     const STATES: &'static [State<FoldSm>] = STATES;
     const EDGES: &'static [Edge<FoldSm>] = EDGES;
     const IGNORES: &'static [Ignore<FoldSm>] = IGNORES;
+
+    /// No edge here carries a `run` list: folding is expressed entirely by the
+    /// states it passes through, so there is nothing for a transition to do on
+    /// its own. `NoAction` says so in the type, and this body cannot be wrong.
+    fn perform(action: chart::NoAction, _ev: &Event, _world: &mut World) {
+        match action {}
+    }
+
+    fn perform_state(action: StateAction, world: &mut World) {
+        match action {
+            StateAction::Fold => log::debug!("fold (speed {:.0})", world.speed),
+            StateAction::Unfold => log::debug!("unfold"),
+        }
+    }
 }
 
 /// The state the mirror is already in when the controller starts. Not a const on

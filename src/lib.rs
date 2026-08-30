@@ -17,8 +17,14 @@
 //!
 //! [`Domain`] bundles the types a controller works with and is shared by both
 //! layers, so a feature that grows states keeps the same declaration. It holds
-//! two effect vocabularies: [`Domain::Action`] for reactions to an event, and
-//! [`Domain::StateAction`] for entry and exit effects, which never see one.
+//! the events and the world — the things a whole controller has in common — and
+//! nothing else.
+//!
+//! Effects are not in common. Each feature and each machine names its own
+//! action type and carries it out itself ([`feature::Feature::perform`],
+//! [`MachineSpec::perform`], [`MachineSpec::perform_state`]), so every `perform`
+//! is exhaustive over exactly the effects its own file declares, and no file
+//! holds effects belonging to another.
 //!
 //! # Declaration macros
 //!
@@ -47,8 +53,12 @@ pub use enums::{Enumerable, HasKind};
 
 use std::fmt::Debug;
 
-/// The set of types one controller works with: events, actions, and the
-/// outside world. Every other item in this crate is generic over `D: Domain`.
+/// What one controller's parts have in common: its events and its world. Every
+/// other item in this crate is generic over `D: Domain`.
+///
+/// Actions are deliberately absent. An effect belongs to whoever emits it, so
+/// the action vocabulary is named by [`feature::Feature::Action`] and
+/// [`MachineSpec::Action`] instead — one per part, not one per controller.
 pub trait Domain: Sized + 'static {
     /// Event body, including payload. [`events!`] generates this together with
     /// its [`HasKind`] impl.
@@ -58,35 +68,9 @@ pub trait Domain: Sized + 'static {
     /// together with its [`Enumerable`] impl.
     type EventKind: Enumerable;
 
-    /// An effect produced in reaction to an event: what [`machine::Edge::run`]
-    /// and [`feature::FeatureInfo::emits`] hold.
-    type Action: Copy + Debug + 'static;
-
-    /// An effect of being in a state: what [`machine::State::entry`] and
-    /// [`machine::State::exit`] hold. They run whichever edge led there, so
-    /// they cannot read the event — an effect that needs it is a
-    /// [`Domain::Action`] on that edge.
-    type StateAction: Copy + Debug + 'static;
-
     /// The outside world this controller reads and changes (APIs, storage).
     /// `?Sized` so a trait object can narrow it, e.g. `type Env = dyn Foo`.
     type Env: ?Sized;
-
-    /// Carries out one action. With [`Domain::perform_state`], the only place
-    /// `Env` may be mutated — guards only ever see `&Env`.
-    ///
-    /// - `action`: the effect to carry out.
-    /// - `ev`: the event being dispatched, for actions that need a runtime
-    ///   value from its payload.
-    /// - `world`: the outside world to mutate.
-    fn perform(action: Self::Action, ev: &Self::Event, world: &mut Self::Env);
-
-    /// Carries out one entry or exit effect. No event: see
-    /// [`Domain::StateAction`].
-    ///
-    /// - `action`: the effect to carry out.
-    /// - `world`: the outside world to mutate.
-    fn perform_state(action: Self::StateAction, world: &mut Self::Env);
 
     /// The event kinds [`verify::coverage`] walks. Defaults to
     /// [`Enumerable::ALL`]; override only to check a subset. It scopes the
@@ -96,28 +80,46 @@ pub trait Domain: Sized + 'static {
     }
 }
 
-/// An effect vocabulary with no values, for a domain that uses only the other
-/// one.
+/// An effect vocabulary with no values, for a part of a controller that
+/// produces one kind of effect but not the other.
+///
+/// A machine whose edges carry no `run` actions names it as
+/// [`MachineSpec::Action`], and one with no entry or exit effects names it as
+/// [`MachineSpec::StateAction`]. Either way the matching `perform` is
+/// `match action {}`: exhaustive over no variants, so it cannot be wrong and
+/// cannot be forgotten.
 ///
 /// ```
+/// # chart::tags! { pub enum Tag { Only } }
 /// # chart::events! { #[derive(Debug)] pub enum Event => Kind { Tick } }
-/// # #[derive(Copy, Clone, Debug)]
-/// # pub enum StateAction { Log }
-/// # pub struct Env;
+/// # use chart::machine::{Edge, Ignore, Source, State};
 /// # pub struct Dom;
+/// # impl chart::Domain for Dom {
+/// #     type Event = Event;
+/// #     type EventKind = Kind;
+/// #     type Env = ();
+/// # }
+/// # pub struct Sm;
 /// use chart::NoAction;
 ///
-/// impl chart::Domain for Dom {
-/// #   type Event = Event;
-/// #   type EventKind = Kind;
-/// #   type StateAction = StateAction;
-/// #   type Env = Env;
+/// impl chart::MachineSpec for Sm {
+/// #   type Domain = Dom;
+/// #   type Tag = Tag;
 ///     type Action = NoAction;
+///     type StateAction = NoAction;
+/// #   const STATES: &'static [State<Sm>] =
+/// #       &[State { tag: Tag::Only, entry: &[], exit: &[] }];
+/// #   const EDGES: &'static [Edge<Sm>] = &[];
+/// #   const IGNORES: &'static [Ignore<Sm>] =
+/// #       &[Ignore { from: Source::Any, when: &[Kind::Tick], why: "nothing to do" }];
 ///
-///     fn perform(action: NoAction, _ev: &Event, _world: &mut Env) {
+///     fn perform(action: NoAction, _ev: &Event, _world: &mut ()) {
 ///         match action {}
 ///     }
-/// #   fn perform_state(_action: StateAction, _world: &mut Env) {}
+///
+///     fn perform_state(action: NoAction, _world: &mut ()) {
+///         match action {}
+///     }
 /// }
 /// ```
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -127,7 +129,7 @@ pub enum NoAction {}
 /// its states are, and the table over them. A domain may name several of these,
 /// or none.
 ///
-/// Holding the table here is what [`feature::FeatureInfo`] does for the other
+/// Holding the table here is what [`feature::Feature`] does for the other
 /// layer — the declaration lives on the type, so [`machine::dispatch`] needs
 /// only an instance. [`verify`] and [`render`] still take tables as arguments,
 /// so a check can be run against a table no machine is built from.
@@ -139,6 +141,19 @@ pub trait MachineSpec: Sized + 'static {
     /// [`Enumerable`] impl.
     type Tag: Enumerable;
 
+    /// An effect this machine's edges run: what [`machine::Edge::run`] holds.
+    /// [`NoAction`] for a machine whose transitions produce nothing on their
+    /// own.
+    type Action: Copy + Debug + 'static;
+
+    /// An effect of being in a state: what [`machine::State::entry`] and
+    /// [`machine::State::exit`] hold. It belongs to the machine rather than to
+    /// the domain, because only a machine has states — a controller with no
+    /// machine never names one. Entry and exit run whichever edge led there, so
+    /// they cannot read the event; an effect that needs one is a
+    /// [`MachineSpec::Action`] on that edge.
+    type StateAction: Copy + Debug + 'static;
+
     /// The states, with their entry and exit effects.
     const STATES: &'static [machine::State<Self>];
 
@@ -148,6 +163,24 @@ pub trait MachineSpec: Sized + 'static {
 
     /// The combinations deliberately left alone, each with its reason.
     const IGNORES: &'static [machine::Ignore<Self>];
+
+    /// Carries out one action this machine's edges run.
+    ///
+    /// With [`MachineSpec::perform_state`], the only place this machine may
+    /// mutate `Env` — guards only ever see `&Env`.
+    ///
+    /// - `action`: the effect to carry out.
+    /// - `ev`: the event being dispatched, for actions that need a runtime
+    ///   value from its payload.
+    /// - `world`: the outside world to mutate.
+    fn perform(action: ActionOf<Self>, ev: &EventOf<Self>, world: &mut EnvOf<Self>);
+
+    /// Carries out one entry or exit effect. No event: see
+    /// [`MachineSpec::StateAction`].
+    ///
+    /// - `action`: the effect to carry out.
+    /// - `world`: the outside world to mutate.
+    fn perform_state(action: Self::StateAction, world: &mut EnvOf<Self>);
 
     /// The states [`verify::coverage`] walks. Defaults to [`Enumerable::ALL`];
     /// override only to check a subset. It scopes the check alone — dispatch
@@ -161,9 +194,11 @@ pub trait MachineSpec: Sized + 'static {
 pub type EventOf<M> = <<M as MachineSpec>::Domain as Domain>::Event;
 /// The event kind type of `M`'s domain.
 pub type KindOf<M> = <<M as MachineSpec>::Domain as Domain>::EventKind;
-/// The action type of `M`'s domain.
-pub type ActionOf<M> = <<M as MachineSpec>::Domain as Domain>::Action;
-/// The state action type of `M`'s domain.
-pub type StateActionOf<M> = <<M as MachineSpec>::Domain as Domain>::StateAction;
+/// The action type of `M`. Like [`StateActionOf`] this is `M`'s own: effects
+/// belong to whoever emits them.
+pub type ActionOf<M> = <M as MachineSpec>::Action;
+/// The state action type of `M`. Unlike the others this is `M`'s own, not its
+/// domain's: states belong to the machine.
+pub type StateActionOf<M> = <M as MachineSpec>::StateAction;
 /// The world type of `M`'s domain.
 pub type EnvOf<M> = <<M as MachineSpec>::Domain as Domain>::Env;

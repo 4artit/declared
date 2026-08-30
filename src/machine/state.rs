@@ -5,7 +5,7 @@ use crate::{MachineSpec, StateActionOf};
 /// One state: a tag plus its entry/exit actions. Static data only —
 /// transition logic belongs in the [`super::Edge`] table, not here.
 ///
-/// They hold [`crate::Domain::StateAction`], from which the event is not
+/// They hold [`crate::MachineSpec::StateAction`], from which the event is not
 /// reachable; an effect that reads it belongs in [`super::Edge::run`].
 pub struct State<M: MachineSpec> {
     pub tag: M::Tag,

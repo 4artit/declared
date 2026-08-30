@@ -11,8 +11,8 @@ below, so a feature cannot react to or emit anything this table omits.
 
 | feature | handles | emits |
 |---|---|---|
-| `Heating` | `DefogChanged` | `HeatingOn`, `HeatingOff` |
-| `Dimming` | `PowerChanged`, `GearChanged` | `DimmingOn`, `DimmingOff` |
+| `Heating` | `DefogChanged` | `On`, `Off` |
+| `Dimming` | `PowerChanged`, `GearChanged` | `On`, `Off` |
 
 ## Rules
 
@@ -22,22 +22,22 @@ fallback.
 
 | feature | when | guard | emits |
 |---|---|---|---|
-| `Heating` | `DefogChanged` | `DefogOn` | `HeatingOn` |
-| `Heating` | `DefogChanged` | else | `HeatingOff` |
-| `Dimming` | `PowerChanged`, `GearChanged` | `PowerOn && !GearReverse` | `DimmingOn` |
-| `Dimming` | `PowerChanged`, `GearChanged` | else | `DimmingOff` |
+| `Heating` | `DefogChanged` | `DefogOn` | `On` |
+| `Heating` | `DefogChanged` | else | `Off` |
+| `Dimming` | `PowerChanged`, `GearChanged` | `PowerOn && !GearReverse` | `On` |
+| `Dimming` | `PowerChanged`, `GearChanged` | else | `Off` |
 
 ## Events, features and actions
 
 ```mermaid
 flowchart LR
     ev_DefogChanged["DefogChanged"] --> ft_Heating["Heating"]
-    ft_Heating["Heating"] -->|"DefogOn"| ac_HeatingOn["HeatingOn"]
-    ft_Heating["Heating"] -->|else| ac_HeatingOff["HeatingOff"]
+    ft_Heating["Heating"] -->|"DefogOn"| ac_Heating_On["On"]
+    ft_Heating["Heating"] -->|else| ac_Heating_Off["Off"]
     ev_PowerChanged["PowerChanged"] --> ft_Dimming["Dimming"]
     ev_GearChanged["GearChanged"] --> ft_Dimming["Dimming"]
-    ft_Dimming["Dimming"] -->|"PowerOn && !GearReverse"| ac_DimmingOn["DimmingOn"]
-    ft_Dimming["Dimming"] -->|else| ac_DimmingOff["DimmingOff"]
+    ft_Dimming["Dimming"] -->|"PowerOn && !GearReverse"| ac_Dimming_On["On"]
+    ft_Dimming["Dimming"] -->|else| ac_Dimming_Off["Off"]
 ```
 
 ## Folding

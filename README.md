@@ -65,9 +65,18 @@ struct Light;
 impl Domain for Light {
     type Event = Event;
     type EventKind = Kind;
+    type Env = Env;
+}
+
+impl MachineSpec for Light {
+    type Domain = Light;
+    type Tag = Tag;
     type Action = Action;
     type StateAction = StateAction;
-    type Env = Env;
+
+    const STATES: &'static [State<Light>] = STATES;
+    const EDGES: &'static [Edge<Light>] = EDGES;
+    const IGNORES: &'static [Ignore<Light>] = IGNORES;
 
     fn perform(action: Action, _ev: &Event, _world: &mut Env) {
         match action {
@@ -81,15 +90,6 @@ impl Domain for Light {
             StateAction::TurnOff => println!("off"),
         }
     }
-}
-
-impl MachineSpec for Light {
-    type Domain = Light;
-    type Tag = Tag;
-
-    const STATES: &'static [State<Light>] = STATES;
-    const EDGES: &'static [Edge<Light>] = EDGES;
-    const IGNORES: &'static [Ignore<Light>] = IGNORES;
 }
 
 static STATES: &[State<Light>] = &[
@@ -140,12 +140,19 @@ Bigger examples:
   `Unknown` instead of `bool`, and `Edge::unknown` names the fail-open or
   fail-closed policy explicitly — it shows up on the diagram instead of
   hiding inside a guard function.
-- **Traceable side effects.** `Domain::perform` and `Domain::perform_state` are
-  the only places the outside world is touched, so every effect a dispatch
-  produced is a plain value you can log or assert on.
+- **Traceable side effects.** A `perform` is the only place the outside world is
+  touched, so every effect a dispatch produced is a plain value you can log or
+  assert on.
+- **Effects belong to whoever emits them.** Each feature and each machine names
+  its own action type — `Feature::Action`, `MachineSpec::Action` — so every
+  `perform` is exhaustive over exactly the effects its own file declares. Adding
+  one is a compile error there and nowhere else, and no file collects effects
+  belonging to another. `Domain` holds only what the parts really share: the
+  events and the world.
 - **Entry effects that cannot read the event.** Entry and exit run whichever
-  edge led there, so they have their own vocabulary, `Domain::StateAction`, and
-  `perform_state` is handed no event — an effect that needs one goes on an edge.
+  edge led there, so they have their own vocabulary, `MachineSpec::StateAction`,
+  and `perform_state` is handed no event — an effect that needs one goes on an
+  edge. It lives on the machine because only a machine has states.
 
 ## Project layout
 
@@ -154,7 +161,7 @@ src/
   lib.rs          // Domain, MachineSpec — library entry points
   guard.rs        // shared by both layers: Cond, OnUnknown
   guard/          // CondNode, Cx, Memo, Expr
-  feature.rs      // stateless layer: Rule, FeatureInfo, dispatch
+  feature.rs      // stateless layer: Feature, Rule, AnyFeature
   machine.rs      // stateful layer: Machine, dispatch, Taken
   machine/        // State, Edge, Source, Goto, Ignore
   render.rs       // to_mermaid, coverage, io_table, rule_table, io_flowchart

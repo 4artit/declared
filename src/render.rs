@@ -1,11 +1,11 @@
 //! Diagrams and tables derived from a controller's declaration.
 //!
 //! The [`crate::machine`] functions read a transition table; the
-//! [`crate::feature`] ones read a list of [`FeatureInfo`].
+//! [`crate::feature`] ones read a list of [`AnyFeature`].
 
 use std::fmt::Write as _;
 
-use crate::feature::{FeatureInfo, Rule};
+use crate::feature::{AnyFeature, RuleRow};
 use crate::guard::OnUnknown;
 use crate::machine::{Edge, Goto, Ignore, State};
 use crate::{Domain, Enumerable, MachineSpec};
@@ -131,18 +131,15 @@ fn join_actions<A: std::fmt::Debug>(actions: &[A]) -> String {
 /// - `features`: the feature list to render.
 ///
 /// Returns a markdown table.
-pub fn io_table<D: Domain>(features: &[FeatureInfo<D>]) -> String
-where
-    D::Action: PartialEq,
-{
+pub fn io_table<D: Domain>(features: &[&dyn AnyFeature<D>]) -> String {
     let mut s = String::from("| feature | handles | emits |\n|---|---|---|\n");
     for f in features {
         let _ = writeln!(
             s,
             "| `{}` | {} | {} |",
-            f.name,
+            f.name(),
             join_or_dash(&f.handles()),
-            join_or_dash(&f.emits())
+            join_names(&f.emits())
         );
     }
     s
@@ -155,11 +152,11 @@ where
 ///
 /// Returns a markdown table. Row order is declaration order, which is also
 /// priority — the first matching rule of a feature is the one that runs.
-pub fn rule_table<D: Domain>(features: &[FeatureInfo<D>]) -> String {
+pub fn rule_table<D: Domain>(features: &[&dyn AnyFeature<D>]) -> String {
     let mut s = String::from("| feature | when | guard | emits |\n|---|---|---|---|\n");
     for f in features {
-        for (i, r) in f.rules.iter().enumerate() {
-            let guard = r.check.render();
+        let rows = f.rows();
+        for (i, r) in rows.iter().enumerate() {
             let unknown = if r.unknown == OnUnknown::Allow {
                 " (unknown=Allow)"
             } else {
@@ -168,10 +165,10 @@ pub fn rule_table<D: Domain>(features: &[FeatureInfo<D>]) -> String {
             let _ = writeln!(
                 s,
                 "| `{}` | {} | {}{unknown} | {} |",
-                f.name,
+                f.name(),
                 join_or_dash(r.when),
-                guard_cell(&guard, f.rules, i),
-                join_or_dash(r.emit),
+                guard_cell(&rows, i),
+                join_names(&r.emit),
             );
         }
     }
@@ -184,27 +181,27 @@ pub fn rule_table<D: Domain>(features: &[FeatureInfo<D>]) -> String {
 ///
 /// Returns the diagram source. The guard of the rule that produces an action
 /// labels the arrow to it, so the diagram says *why* an action is emitted and
-/// not only that it can be. Node ids carry a prefix because a feature and the
-/// action it emits routinely share a name, which would otherwise merge them
-/// into one self-looping node.
-pub fn io_flowchart<D: Domain>(features: &[FeatureInfo<D>]) -> String {
+/// not only that it can be. Action node ids carry the feature name because an
+/// action belongs to one feature: two features that happen to name an effect
+/// alike are drawing two different effects.
+pub fn io_flowchart<D: Domain>(features: &[&dyn AnyFeature<D>]) -> String {
     let mut s = String::from("flowchart LR\n");
     for f in features {
+        let name = f.name();
         for k in f.handles() {
-            let _ = writeln!(s, "    ev_{k:?}[\"{k:?}\"] --> ft_{0}[\"{0}\"]", f.name);
+            let _ = writeln!(s, "    ev_{k:?}[\"{k:?}\"] --> ft_{name}[\"{name}\"]");
         }
-        for (i, r) in f.rules.iter().enumerate() {
-            let guard = r.check.render();
-            let label = match (guard.is_empty(), is_fallback(f.rules, i)) {
-                (false, _) => format!("|\"{guard}\"|"),
+        let rows = f.rows();
+        for (i, r) in rows.iter().enumerate() {
+            let label = match (r.guard.is_empty(), is_fallback(&rows, i)) {
+                (false, _) => format!("|\"{}\"|", r.guard),
                 (true, true) => "|else|".to_string(),
                 (true, false) => String::new(),
             };
-            for a in r.emit {
+            for a in &r.emit {
                 let _ = writeln!(
                     s,
-                    "    ft_{0}[\"{0}\"] -->{label} ac_{a:?}[\"{a:?}\"]",
-                    f.name
+                    "    ft_{name}[\"{name}\"] -->{label} ac_{name}_{a}[\"{a}\"]"
                 );
             }
         }
@@ -215,17 +212,17 @@ pub fn io_flowchart<D: Domain>(features: &[FeatureInfo<D>]) -> String {
 /// Whether an unguarded rule is a fallback rather than an unconditional one:
 /// an earlier rule of the same feature covers one of its kinds, so this line is
 /// reached only when that one did not match.
-fn is_fallback<D: Domain>(rules: &[Rule<D>], i: usize) -> bool {
-    rules[..i]
+fn is_fallback<D: Domain>(rows: &[RuleRow<D>], i: usize) -> bool {
+    rows[..i]
         .iter()
-        .any(|e| e.when.iter().any(|k| rules[i].when.contains(k)))
+        .any(|e| e.when.iter().any(|k| rows[i].when.contains(k)))
 }
 
 /// The guard column of one rule: the expression, `else` for a fallback, or a
 /// dash for a rule that is genuinely unconditional.
-fn guard_cell<D: Domain>(guard: &str, rules: &[Rule<D>], i: usize) -> String {
-    match (guard.is_empty(), is_fallback(rules, i)) {
-        (false, _) => format!("`{guard}`"),
+fn guard_cell<D: Domain>(rows: &[RuleRow<D>], i: usize) -> String {
+    match (rows[i].guard.is_empty(), is_fallback(rows, i)) {
+        (false, _) => format!("`{}`", rows[i].guard),
         (true, true) => "else".to_string(),
         (true, false) => "—".to_string(),
     }
@@ -238,6 +235,18 @@ fn join_or_dash<T: std::fmt::Debug>(items: &[T]) -> String {
     items
         .iter()
         .map(|i| format!("`{i:?}`"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Like [`join_or_dash`] for names already rendered to text.
+fn join_names(items: &[String]) -> String {
+    if items.is_empty() {
+        return "—".into();
+    }
+    items
+        .iter()
+        .map(|i| format!("`{i}`"))
         .collect::<Vec<_>>()
         .join(", ")
 }

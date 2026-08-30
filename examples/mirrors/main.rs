@@ -17,7 +17,7 @@ mod fold;
 mod guards;
 mod heating;
 
-use chart::feature::{self, Feature, FeatureInfo};
+use chart::feature::{self, AnyFeature};
 use chart::machine::{self, Machine};
 use chart::{Domain, HasKind, render};
 
@@ -38,24 +38,6 @@ chart::events! {
     }
 }
 
-/// Effects produced in reaction to an event. Carries no payload, which is what
-/// a `&'static` action list requires — runtime values are read from `ev` or the
-/// world inside `perform`.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum Action {
-    HeatingOn,
-    HeatingOff,
-    DimmingOn,
-    DimmingOff,
-}
-
-/// Effects of the fold machine being in a state, run whichever edge led there.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum StateAction {
-    Fold,
-    Unfold,
-}
-
 /// The outside world. Stands in for an API bridge.
 #[derive(Default)]
 pub struct World {
@@ -65,41 +47,23 @@ pub struct World {
     pub fold_position: f32,
 }
 
-/// The vocabulary both layers work in.
+/// What the parts of this controller have in common: the events and the world.
+/// Effects are not in common — `heating.rs`, `dimming.rs` and `fold.rs` each
+/// name their own, so no file here holds another file's effects.
 pub struct Mirrors;
 
 impl Domain for Mirrors {
     type Event = Event;
     type EventKind = Kind;
-    type Action = Action;
-    type StateAction = StateAction;
     type Env = World;
-
-    /// The world is touched here and in `perform_state`, nowhere else.
-    fn perform(action: Action, _ev: &Event, _world: &mut World) {
-        let line = match action {
-            Action::HeatingOn => "heating on",
-            Action::HeatingOff => "heating off",
-            Action::DimmingOn => "dimming on",
-            Action::DimmingOff => "dimming off",
-        };
-        log::debug!("{}", line);
-    }
-
-    fn perform_state(action: StateAction, world: &mut World) {
-        let line = match action {
-            StateAction::Fold => format!("fold (speed {:.0})", world.speed),
-            StateAction::Unfold => "unfold".to_string(),
-        };
-        log::debug!("{}", line);
-    }
 }
 
 // ─────────────────────────────────────────── router
 
 /// The features, in dispatch order. The router walks this list, so what the
-/// document draws and what actually runs cannot come apart.
-const FEATURES: &[FeatureInfo<Mirrors>] = &[Heating::INFO, Dimming::INFO];
+/// document draws and what actually runs cannot come apart. They are trait
+/// objects because each feature has its own action type.
+const FEATURES: &[&dyn AnyFeature<Mirrors>] = &[&Heating, &Dimming];
 
 /// Holds only the machine: a feature is a table, not an object, so there is no
 /// feature instance for the controller to keep.
@@ -124,7 +88,7 @@ impl Controller {
         }
 
         for f in FEATURES {
-            feature::dispatch(f, ev, world);
+            f.dispatch(ev, world);
         }
         machine::dispatch(&mut self.fold, ev, world);
     }

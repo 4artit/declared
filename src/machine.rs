@@ -7,9 +7,7 @@ pub use edge::{Edge, Goto, Ignore, Source};
 pub use state::State;
 
 use crate::guard::{Cx, Memo};
-use crate::{
-    ActionOf, Domain, EnvOf, EventOf, HasKind, KindOf, MachineSpec, StateActionOf, verify,
-};
+use crate::{ActionOf, EnvOf, EventOf, HasKind, KindOf, MachineSpec, StateActionOf, verify};
 
 /// The outcome of one [`dispatch`] call, for tests and logs.
 ///
@@ -143,14 +141,14 @@ impl<M: MachineSpec> Machine<M> {
     /// Runs each of an edge's actions in order.
     fn perform_all(to_run: &[ActionOf<M>], ev: &EventOf<M>, world: &mut EnvOf<M>) {
         for &a in to_run {
-            <M::Domain as Domain>::perform(a, ev, world);
+            M::perform(a, ev, world);
         }
     }
 
     /// Runs each of a state's entry or exit actions in order.
     fn perform_state_all(to_run: &[StateActionOf<M>], world: &mut EnvOf<M>) {
         for &a in to_run {
-            <M::Domain as Domain>::perform_state(a, world);
+            M::perform_state(a, world);
         }
     }
 }
@@ -165,13 +163,13 @@ impl<M: MachineSpec> Machine<M> {
 /// Returns the [`Taken`] transition, or `None` if no edge matched (a warning is
 /// logged unless the combination is covered by an [`Ignore`]). The return value
 /// is for tests and logs; a caller that reads its effects out of `Env` can drop
-/// it, which makes the call read like [`crate::feature::dispatch`].
+/// it, which makes the call read like [`crate::feature::AnyFeature::dispatch`].
 ///
 /// Effects run in this order: the current state's [`State::exit`] → the tag
 /// changes → `run` → the target state's [`State::entry`]. For
 /// [`Goto::Internal`] only `run` executes. Entry and exit go through
-/// [`Domain::perform_state`], which is not given the event; only `run` reaches
-/// [`Domain::perform`].
+/// [`MachineSpec::perform_state`], which is not given the event; only `run`
+/// reaches [`MachineSpec::perform`].
 ///
 /// Not re-entrant: `m` is mutably borrowed for the call, so a nested dispatch
 /// won't compile. Queue follow-up events in the caller instead — see [`Taken`].

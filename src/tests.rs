@@ -9,7 +9,7 @@
 
 use std::cell::Cell;
 
-use super::feature::{self, Feature, FeatureInfo, Rule};
+use super::feature::{self, AnyFeature, Feature, Rule};
 use super::guard::{Cond, Cx, Expr, Memo, OnUnknown};
 use super::machine::{self, Edge, Goto, Ignore, Machine, Source, State, Taken};
 use super::{Domain, Enumerable, HasKind, MachineSpec, render, verify};
@@ -69,34 +69,48 @@ struct RearCam;
 impl Domain for RearCam {
     type Event = Event;
     type EventKind = Kind;
-    type Action = Action;
-    // The feature fixtures below emit the same actions this machine runs on
-    // entry and exit, so the two vocabularies are aliased onto one enum.
-    type StateAction = Action;
     type Env = Env;
+}
 
-    fn perform(action: Action, ev: &Event, world: &mut Env) {
-        world.performed_for.push(ev.kind());
-        Self::perform_state(action, world);
+/// Every owner in this fixture runs its effects the same way, so they all point
+/// here. Splitting effects per owner is what the example does; the tests are
+/// about dispatch, not about who owns what.
+fn perform_action(action: Action, world: &mut Env) {
+    world.performed.push(action);
+    match action {
+        Action::ShowCamera => world.camera_visible = true,
+        Action::HideCamera => world.camera_visible = false,
+        Action::UpdateOverlay => {}
     }
+}
 
-    fn perform_state(action: Action, world: &mut Env) {
-        world.performed.push(action);
-        match action {
-            Action::ShowCamera => world.camera_visible = true,
-            Action::HideCamera => world.camera_visible = false,
-            Action::UpdateOverlay => {}
-        }
-    }
+/// Records the kind the action was performed for, which only an event-carrying
+/// action can do.
+fn perform_for_event(action: Action, ev: &Event, world: &mut Env) {
+    world.performed_for.push(ev.kind());
+    perform_action(action, world);
 }
 
 impl MachineSpec for RearCam {
     type Domain = RearCam;
     type Tag = Tag;
+    // This machine's edges and its states drive the same effects, so both of
+    // its vocabularies are the one `Action` enum. The features below declare
+    // their own; `Env` is what they all end up speaking to.
+    type Action = Action;
+    type StateAction = Action;
 
     const STATES: &'static [State<RearCam>] = STATES;
     const EDGES: &'static [Edge<RearCam>] = EDGES;
     const IGNORES: &'static [Ignore<RearCam>] = IGNORES;
+
+    fn perform(action: Action, ev: &Event, world: &mut Env) {
+        perform_for_event(action, ev, world);
+    }
+
+    fn perform_state(action: Action, world: &mut Env) {
+        perform_action(action, world);
+    }
 }
 
 // ─────────────────────────────────────────── guards
@@ -631,17 +645,17 @@ struct PartialCam;
 impl Domain for PartialCam {
     type Event = Event;
     type EventKind = Kind;
-    type Action = Action;
-    type StateAction = Action;
     type Env = Env;
-
-    fn perform(_action: Action, _ev: &Event, _world: &mut Env) {}
-    fn perform_state(_action: Action, _world: &mut Env) {}
 }
 
 impl MachineSpec for PartialCam {
     type Domain = PartialCam;
     type Tag = Tag;
+    type Action = Action;
+    type StateAction = Action;
+
+    fn perform(_action: Action, _ev: &Event, _world: &mut Env) {}
+    fn perform_state(_action: Action, _world: &mut Env) {}
 
     const STATES: &'static [State<PartialCam>] = PARTIAL_STATES;
     const EDGES: &'static [Edge<PartialCam>] = PARTIAL_EDGES;
@@ -823,10 +837,20 @@ struct ChainSm;
 impl MachineSpec for ChainSm {
     type Domain = RearCam;
     type Tag = ChainTag;
+    type Action = Action;
+    type StateAction = Action;
 
     const STATES: &'static [State<ChainSm>] = CHAIN_STATES;
     const EDGES: &'static [Edge<ChainSm>] = CHAIN_EDGES;
     const IGNORES: &'static [Ignore<ChainSm>] = &[];
+
+    fn perform(action: Action, ev: &Event, world: &mut Env) {
+        perform_for_event(action, ev, world);
+    }
+
+    fn perform_state(action: Action, world: &mut Env) {
+        perform_action(action, world);
+    }
 }
 
 static CHAIN_STATES: &[State<ChainSm>] = &[
@@ -887,17 +911,17 @@ struct Broken;
 impl Domain for Broken {
     type Event = Event;
     type EventKind = Kind;
-    type Action = Action;
-    type StateAction = Action;
     type Env = Env;
-
-    fn perform(_action: Action, _ev: &Event, _world: &mut Env) {}
-    fn perform_state(_action: Action, _world: &mut Env) {}
 }
 
 impl MachineSpec for Broken {
     type Domain = Broken;
     type Tag = Tag;
+    type Action = Action;
+    type StateAction = Action;
+
+    fn perform(_action: Action, _ev: &Event, _world: &mut Env) {}
+    fn perform_state(_action: Action, _world: &mut Env) {}
 
     const STATES: &'static [State<Broken>] = BROKEN_STATES;
     const EDGES: &'static [Edge<Broken>] = BROKEN_EDGES;
@@ -1080,57 +1104,100 @@ fn internal_table_dashes_an_empty_guard() {
 // nothing about `Feature` requires them — it only needs `Domain`. The guard
 // nodes are the ones the machine above uses, which is the point of declaring
 // them against the domain.
+//
+// Each fixture names its own action type. They all speak to `Env` through the
+// same helpers, because the world has one language even when its callers do
+// not.
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+enum CamAction {
+    ShowCamera,
+    HideCamera,
+}
+
+// Only needed by `feature::unemitted_actions`; `Feature` does not require it.
+impl Enumerable for CamAction {
+    const ALL: &'static [Self] = &[Self::ShowCamera, Self::HideCamera];
+}
 
 struct Camera;
 
 impl Feature<RearCam> for Camera {
-    const INFO: FeatureInfo<RearCam> = FeatureInfo {
-        name: "Camera",
-        rules: &[
-            Rule {
-                when: &[Kind::GearChanged],
-                check: crate::check!(GearIsReverse),
-                unknown: OnUnknown::Deny,
-                emit: &[Action::ShowCamera],
+    type Action = CamAction;
+
+    const NAME: &'static str = "Camera";
+
+    const RULES: &'static [Rule<RearCam, CamAction>] = &[
+        Rule {
+            when: &[Kind::GearChanged],
+            check: crate::check!(GearIsReverse),
+            unknown: OnUnknown::Deny,
+            emit: &[CamAction::ShowCamera],
+        },
+        Rule {
+            when: &[Kind::GearChanged],
+            check: crate::check!(),
+            unknown: OnUnknown::Deny,
+            emit: &[CamAction::HideCamera],
+        },
+    ];
+
+    fn perform(action: CamAction, ev: &Event, world: &mut Env) {
+        perform_for_event(
+            match action {
+                CamAction::ShowCamera => Action::ShowCamera,
+                CamAction::HideCamera => Action::HideCamera,
             },
-            Rule {
-                when: &[Kind::GearChanged],
-                check: crate::check!(),
-                unknown: OnUnknown::Deny,
-                emit: &[Action::HideCamera],
-            },
-        ],
-    };
+            ev,
+            world,
+        );
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+enum OverlayAction {
+    UpdateOverlay,
+}
+
+impl Enumerable for OverlayAction {
+    const ALL: &'static [Self] = &[Self::UpdateOverlay];
 }
 
 struct Overlay;
 
 impl Feature<RearCam> for Overlay {
-    const INFO: FeatureInfo<RearCam> = FeatureInfo {
-        name: "Overlay",
-        rules: &[Rule {
-            when: &[Kind::SpeedChanged],
-            check: crate::check!(SpeedBelowLimit),
-            unknown: OnUnknown::Deny,
-            emit: &[Action::UpdateOverlay],
-        }],
-    };
+    type Action = OverlayAction;
+
+    const NAME: &'static str = "Overlay";
+
+    const RULES: &'static [Rule<RearCam, OverlayAction>] = &[Rule {
+        when: &[Kind::SpeedChanged],
+        check: crate::check!(SpeedBelowLimit),
+        unknown: OnUnknown::Deny,
+        emit: &[OverlayAction::UpdateOverlay],
+    }];
+
+    fn perform(action: OverlayAction, ev: &Event, world: &mut Env) {
+        match action {
+            OverlayAction::UpdateOverlay => perform_for_event(Action::UpdateOverlay, ev, world),
+        }
+    }
 }
 
-static CAMERA_FEATURES: &[FeatureInfo<RearCam>] = &[Camera::INFO, Overlay::INFO];
+static CAMERA_FEATURES: &[&dyn AnyFeature<RearCam>] = &[&Camera, &Overlay];
 
 #[test]
 fn dispatch_runs_only_the_declared_kinds() {
     let mut w = Env::default();
 
     // Declared: a rule matches and dispatch carries its effect out.
-    feature::dispatch(&Camera::INFO, &Event::GearChanged(Gear::Reverse), &mut w);
+    Camera.dispatch(&Event::GearChanged(Gear::Reverse), &mut w);
     assert_eq!(w.performed, vec![Action::ShowCamera]);
     assert!(w.camera_visible);
 
     // Not declared: no rule is even considered, so no guard runs.
     w.speed = Some(10.0);
-    feature::dispatch(&Camera::INFO, &Event::SpeedChanged, &mut w);
+    Camera.dispatch(&Event::SpeedChanged, &mut w);
     assert_eq!(w.performed, vec![Action::ShowCamera]);
 }
 
@@ -1140,7 +1207,7 @@ fn dispatch_runs_only_the_declared_kinds() {
 fn dispatch_performs_with_the_event_that_caused_it() {
     let mut w = Env::default();
 
-    feature::dispatch(&Camera::INFO, &Event::GearChanged(Gear::Drive), &mut w);
+    Camera.dispatch(&Event::GearChanged(Gear::Drive), &mut w);
 
     assert_eq!(w.performed, vec![Action::HideCamera]);
     assert_eq!(w.performed_for, vec![Kind::GearChanged]);
@@ -1152,7 +1219,7 @@ fn dispatch_performs_with_the_event_that_caused_it() {
 fn dispatch_takes_the_first_rule_that_matches() {
     let mut w = Env::default();
 
-    feature::dispatch(&Camera::INFO, &Event::GearChanged(Gear::Reverse), &mut w);
+    Camera.dispatch(&Event::GearChanged(Gear::Reverse), &mut w);
 
     assert_eq!(w.performed, vec![Action::ShowCamera]);
 }
@@ -1162,7 +1229,7 @@ fn dispatch_takes_the_first_rule_that_matches() {
 fn dispatch_falls_through_to_an_unguarded_rule() {
     let mut w = Env::default();
 
-    feature::dispatch(&Camera::INFO, &Event::GearChanged(Gear::Drive), &mut w);
+    Camera.dispatch(&Event::GearChanged(Gear::Drive), &mut w);
 
     assert_eq!(w.performed, vec![Action::HideCamera]);
 }
@@ -1173,7 +1240,7 @@ fn dispatch_falls_through_to_an_unguarded_rule() {
 fn dispatch_denies_an_undecidable_guard() {
     let mut w = Env::default();
 
-    feature::dispatch(&Overlay::INFO, &Event::SpeedChanged, &mut w);
+    Overlay.dispatch(&Event::SpeedChanged, &mut w);
 
     assert!(w.performed.is_empty());
 }
@@ -1182,22 +1249,27 @@ fn dispatch_denies_an_undecidable_guard() {
 struct Optimist;
 
 impl Feature<RearCam> for Optimist {
-    const INFO: FeatureInfo<RearCam> = FeatureInfo {
-        name: "Optimist",
-        rules: &[Rule {
-            when: &[Kind::SpeedChanged],
-            check: crate::check!(SpeedBelowLimit),
-            unknown: OnUnknown::Allow,
-            emit: &[Action::UpdateOverlay],
-        }],
-    };
+    type Action = OverlayAction;
+
+    const NAME: &'static str = "Optimist";
+
+    const RULES: &'static [Rule<RearCam, OverlayAction>] = &[Rule {
+        when: &[Kind::SpeedChanged],
+        check: crate::check!(SpeedBelowLimit),
+        unknown: OnUnknown::Allow,
+        emit: &[OverlayAction::UpdateOverlay],
+    }];
+
+    fn perform(action: OverlayAction, ev: &Event, world: &mut Env) {
+        Overlay::perform(action, ev, world);
+    }
 }
 
 #[test]
 fn dispatch_allows_an_undecidable_guard_when_told_to() {
     let mut w = Env::default();
 
-    feature::dispatch(&Optimist::INFO, &Event::SpeedChanged, &mut w);
+    Optimist.dispatch(&Event::SpeedChanged, &mut w);
 
     assert_eq!(w.performed, vec![Action::UpdateOverlay]);
 }
@@ -1207,23 +1279,28 @@ fn dispatch_allows_an_undecidable_guard_when_told_to() {
 struct Shared;
 
 impl Feature<RearCam> for Shared {
-    const INFO: FeatureInfo<RearCam> = FeatureInfo {
-        name: "Shared",
-        rules: &[
-            Rule {
-                when: &[Kind::SpeedChanged],
-                check: crate::check!(SpeedBelowLimit && GearIsReverse),
-                unknown: OnUnknown::Deny,
-                emit: &[Action::ShowCamera],
-            },
-            Rule {
-                when: &[Kind::SpeedChanged],
-                check: crate::check!(SpeedBelowLimit),
-                unknown: OnUnknown::Deny,
-                emit: &[Action::UpdateOverlay],
-            },
-        ],
-    };
+    type Action = CamAction;
+
+    const NAME: &'static str = "Shared";
+
+    const RULES: &'static [Rule<RearCam, CamAction>] = &[
+        Rule {
+            when: &[Kind::SpeedChanged],
+            check: crate::check!(SpeedBelowLimit && GearIsReverse),
+            unknown: OnUnknown::Deny,
+            emit: &[CamAction::ShowCamera],
+        },
+        Rule {
+            when: &[Kind::SpeedChanged],
+            check: crate::check!(SpeedBelowLimit),
+            unknown: OnUnknown::Deny,
+            emit: &[CamAction::HideCamera],
+        },
+    ];
+
+    fn perform(action: CamAction, ev: &Event, world: &mut Env) {
+        Camera::perform(action, ev, world);
+    }
 }
 
 #[test]
@@ -1235,9 +1312,9 @@ fn dispatch_evaluates_a_shared_node_once() {
 
     // The first rule fails on `GearIsReverse`, the second re-reads the speed
     // node and hits the cache.
-    feature::dispatch(&Shared::INFO, &Event::SpeedChanged, &mut w);
+    Shared.dispatch(&Event::SpeedChanged, &mut w);
 
-    assert_eq!(w.performed, vec![Action::UpdateOverlay]);
+    assert_eq!(w.performed, vec![Action::HideCamera]);
     assert_eq!(w.speed_lookups.get(), 1);
 }
 
@@ -1246,23 +1323,28 @@ fn dispatch_evaluates_a_shared_node_once() {
 struct Noisy;
 
 impl Feature<RearCam> for Noisy {
-    const INFO: FeatureInfo<RearCam> = FeatureInfo {
-        name: "Noisy",
-        rules: &[
-            Rule {
-                when: &[Kind::SpeedChanged, Kind::GearChanged],
-                check: crate::check!(GearIsReverse),
-                unknown: OnUnknown::Deny,
-                emit: &[Action::ShowCamera, Action::ShowCamera],
-            },
-            Rule {
-                when: &[Kind::GearChanged, Kind::PowerChanged],
-                check: crate::check!(),
-                unknown: OnUnknown::Deny,
-                emit: &[Action::ShowCamera],
-            },
-        ],
-    };
+    type Action = CamAction;
+
+    const NAME: &'static str = "Noisy";
+
+    const RULES: &'static [Rule<RearCam, CamAction>] = &[
+        Rule {
+            when: &[Kind::SpeedChanged, Kind::GearChanged],
+            check: crate::check!(GearIsReverse),
+            unknown: OnUnknown::Deny,
+            emit: &[CamAction::ShowCamera, CamAction::ShowCamera],
+        },
+        Rule {
+            when: &[Kind::GearChanged, Kind::PowerChanged],
+            check: crate::check!(),
+            unknown: OnUnknown::Deny,
+            emit: &[CamAction::ShowCamera],
+        },
+    ];
+
+    fn perform(action: CamAction, ev: &Event, world: &mut Env) {
+        Camera::perform(action, ev, world);
+    }
 }
 
 /// Kinds come back in the domain's declaration order, not the order the rules
@@ -1270,14 +1352,14 @@ impl Feature<RearCam> for Noisy {
 #[test]
 fn handles_is_the_union_in_domain_order() {
     assert_eq!(
-        Noisy::INFO.handles(),
+        Noisy.handles(),
         vec![Kind::GearChanged, Kind::SpeedChanged, Kind::PowerChanged]
     );
 }
 
 #[test]
 fn emits_drops_repeats() {
-    assert_eq!(Noisy::INFO.emits(), vec![Action::ShowCamera]);
+    assert_eq!(Noisy.emits(), vec!["ShowCamera".to_string()]);
 }
 
 #[test]
@@ -1294,15 +1376,25 @@ fn io_table_lists_each_feature() {
     );
 }
 
-/// A column with nothing in it renders as a dash rather than an empty cell.
+/// A feature with no rules at all: both columns render as a dash rather than an
+/// empty cell.
+struct Idle;
+
+impl Feature<RearCam> for Idle {
+    type Action = CamAction;
+
+    const NAME: &'static str = "Idle";
+
+    const RULES: &'static [Rule<RearCam, CamAction>] = &[];
+
+    fn perform(action: CamAction, ev: &Event, world: &mut Env) {
+        Camera::perform(action, ev, world);
+    }
+}
+
 #[test]
 fn io_table_dashes_a_feature_that_declares_nothing() {
-    let idle: &[FeatureInfo<RearCam>] = &[FeatureInfo {
-        name: "Idle",
-        rules: &[],
-    }];
-
-    let table = render::io_table(idle);
+    let table = render::io_table(&[&Idle]);
 
     assert!(table.contains("| `Idle` | — | — |"), "{table}");
 }
@@ -1325,7 +1417,7 @@ fn rule_table_shows_the_guard_of_each_rule() {
 /// labelled as one so the row does not read as unconditional.
 #[test]
 fn rule_table_calls_a_covered_unguarded_rule_else() {
-    let table = render::rule_table(&[Camera::INFO]);
+    let table = render::rule_table(&[&Camera]);
 
     assert!(
         table.contains("| `Camera` | `GearChanged` | else | `HideCamera` |"),
@@ -1334,19 +1426,28 @@ fn rule_table_calls_a_covered_unguarded_rule_else() {
 }
 
 /// A rule with nothing before it really is unconditional, so it gets a dash.
-#[test]
-fn rule_table_dashes_a_rule_nothing_precedes() {
-    let unconditional: &[FeatureInfo<RearCam>] = &[FeatureInfo {
-        name: "Always",
-        rules: &[Rule {
-            when: &[Kind::PowerChanged],
-            check: crate::check!(),
-            unknown: OnUnknown::Deny,
-            emit: &[Action::UpdateOverlay],
-        }],
+struct Always;
+
+impl Feature<RearCam> for Always {
+    type Action = OverlayAction;
+
+    const NAME: &'static str = "Always";
+
+    const RULES: &'static [Rule<RearCam, OverlayAction>] = &[Rule {
+        when: &[Kind::PowerChanged],
+        check: crate::check!(),
+        unknown: OnUnknown::Deny,
+        emit: &[OverlayAction::UpdateOverlay],
     }];
 
-    let table = render::rule_table(unconditional);
+    fn perform(action: OverlayAction, ev: &Event, world: &mut Env) {
+        Overlay::perform(action, ev, world);
+    }
+}
+
+#[test]
+fn rule_table_dashes_a_rule_nothing_precedes() {
+    let table = render::rule_table(&[&Always]);
 
     assert!(
         table.contains("| `Always` | `PowerChanged` | — | `UpdateOverlay` |"),
@@ -1358,7 +1459,7 @@ fn rule_table_dashes_a_rule_nothing_precedes() {
 /// the guard column.
 #[test]
 fn rule_table_marks_an_allowing_rule() {
-    let table = render::rule_table(&[Optimist::INFO]);
+    let table = render::rule_table(&[&Optimist]);
 
     assert!(
         table.contains("`SpeedBelowLimit` (unknown=Allow)"),
@@ -1372,18 +1473,31 @@ fn io_flowchart_keeps_features_and_actions_apart() {
 
     assert!(chart.contains(r#"ev_GearChanged["GearChanged"] --> ft_Camera["Camera"]"#));
     assert!(
-        chart.contains(r#"ft_Camera["Camera"] -->|"GearIsReverse"| ac_ShowCamera["ShowCamera"]"#)
+        chart.contains(
+            r#"ft_Camera["Camera"] -->|"GearIsReverse"| ac_Camera_ShowCamera["ShowCamera"]"#
+        ),
+        "{chart}"
     );
+}
+
+/// An action node id carries its feature: two features that name an effect
+/// alike are drawing two different effects, so the nodes must not merge.
+#[test]
+fn io_flowchart_scopes_action_nodes_to_their_feature() {
+    let chart = render::io_flowchart(&[&Camera, &Noisy]);
+
+    assert!(chart.contains("ac_Camera_ShowCamera"), "{chart}");
+    assert!(chart.contains("ac_Noisy_ShowCamera"), "{chart}");
 }
 
 /// The arrow an action arrives by carries the condition that produced it, so
 /// the diagram says why and not only whether.
 #[test]
 fn io_flowchart_labels_arrows_with_their_guard() {
-    let chart = render::io_flowchart(&[Camera::INFO]);
+    let chart = render::io_flowchart(&[&Camera]);
 
     assert!(
-        chart.contains(r#"ft_Camera["Camera"] -->|else| ac_HideCamera["HideCamera"]"#),
+        chart.contains(r#"ft_Camera["Camera"] -->|else| ac_Camera_HideCamera["HideCamera"]"#),
         "{chart}"
     );
 }
@@ -1391,20 +1505,10 @@ fn io_flowchart_labels_arrows_with_their_guard() {
 /// An unconditional rule's arrow carries no label at all.
 #[test]
 fn io_flowchart_leaves_an_unconditional_arrow_bare() {
-    let unconditional: &[FeatureInfo<RearCam>] = &[FeatureInfo {
-        name: "Always",
-        rules: &[Rule {
-            when: &[Kind::PowerChanged],
-            check: crate::check!(),
-            unknown: OnUnknown::Deny,
-            emit: &[Action::UpdateOverlay],
-        }],
-    }];
-
-    let chart = render::io_flowchart(unconditional);
+    let chart = render::io_flowchart(&[&Always]);
 
     assert!(
-        chart.contains(r#"ft_Always["Always"] --> ac_UpdateOverlay["UpdateOverlay"]"#),
+        chart.contains(r#"ft_Always["Always"] --> ac_Always_UpdateOverlay["UpdateOverlay"]"#),
         "{chart}"
     );
 }
@@ -1435,12 +1539,22 @@ fn unhandled_kinds_counts_edges_but_not_ignores() {
     );
 }
 
+/// An effect a feature declares but never emits is dead, and the check is a
+/// question about that one feature: with an action type per feature, nobody
+/// else could have emitted it.
 #[test]
-fn unemitted_actions_reports_what_no_feature_produces() {
-    let only_camera = &[Camera::INFO];
-
+fn unemitted_actions_reports_what_a_feature_never_produces() {
     assert_eq!(
-        feature::unemitted_actions(only_camera),
-        vec![Action::UpdateOverlay]
+        feature::unemitted_actions::<RearCam, Overlay>(),
+        Vec::<OverlayAction>::new()
+    );
+    assert_eq!(
+        feature::unemitted_actions::<RearCam, Always>(),
+        Vec::<OverlayAction>::new()
+    );
+    // `Shared` emits both of `CamAction`'s variants; `Idle` emits neither.
+    assert_eq!(
+        feature::unemitted_actions::<RearCam, Idle>(),
+        vec![CamAction::ShowCamera, CamAction::HideCamera]
     );
 }

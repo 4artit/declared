@@ -40,7 +40,7 @@ impl<'a, D: Domain> Cx<'a, D> {
 }
 
 /// Guard evaluation cache, valid for one [`crate::machine::dispatch`] or
-/// [`crate::feature::dispatch`] call, so a node shared by several rows is
+/// [`crate::feature::AnyFeature::dispatch`] call, so a node shared by several rows is
 /// evaluated only once per event.
 #[derive(Default)]
 pub struct Memo {
@@ -148,11 +148,7 @@ impl<D: Domain> Expr<D> {
 /// # impl chart::Domain for RearCam {
 /// #     type Event = Event;
 /// #     type EventKind = Kind;
-/// #     type Action = chart::NoAction;
-/// #     type StateAction = chart::NoAction;
 /// #     type Env = ();
-/// #     fn perform(a: chart::NoAction, _ev: &Event, _w: &mut ()) { match a {} }
-/// #     fn perform_state(a: chart::NoAction, _w: &mut ()) { match a {} }
 /// # }
 /// chart::cond_node!(RearCam, GearIsReverse, |cx| match cx.event {
 ///     Event::GearChanged(g) => Cond::from(*g == Gear::Reverse),
