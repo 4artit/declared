@@ -4,6 +4,7 @@
 //!
 //! | File | Layer | Why |
 //! |---|---|---|
+//! | `guards.rs` | both | The conditions either layer decides by |
 //! | `heating.rs` | feature | Follows the defog signal |
 //! | `dimming.rs` | feature | A function of power and gear |
 //! | `fold.rs` | machine | Folding and unfolding are observable states |
@@ -13,6 +14,7 @@
 
 mod dimming;
 mod fold;
+mod guards;
 mod heating;
 
 use chart::feature::{self, Feature, FeatureInfo};
@@ -95,20 +97,19 @@ impl Domain for Mirrors {
 
 // ─────────────────────────────────────────── router
 
-/// Kept by hand, next to the router so that a missing entry is visible.
+/// The features, in dispatch order. The router walks this list, so what the
+/// document draws and what actually runs cannot come apart.
 const FEATURES: &[FeatureInfo<Mirrors>] = &[Heating::INFO, Dimming::INFO];
 
+/// Holds only the machine: a feature is a table, not an object, so there is no
+/// feature instance for the controller to keep.
 struct Controller {
-    heating: Heating,
-    dimming: Dimming,
     fold: Machine<FoldSm>,
 }
 
 impl Default for Controller {
     fn default() -> Self {
         Self {
-            heating: Heating,
-            dimming: Dimming,
             fold: fold::machine(),
         }
     }
@@ -122,8 +123,9 @@ impl Controller {
             return;
         }
 
-        feature::dispatch(&mut self.heating, ev, world);
-        feature::dispatch(&mut self.dimming, ev, world);
+        for f in FEATURES {
+            feature::dispatch(f, ev, world);
+        }
         machine::dispatch(&mut self.fold, ev, world);
     }
 }
@@ -189,9 +191,17 @@ declarations, so it cannot drift from the code — regenerate with
 
 ## Features
 
-Stateless features, one per file, each declaring what it handles and emits.
+Stateless features, one per file. `handles` and `emits` are read off the rules
+below, so a feature cannot react to or emit anything this table omits.
 
 {table}
+## Rules
+
+One line per `input -> output` rule. Within a feature the order is priority: the
+first rule whose guard holds is the one that runs, so a rule with no guard is a
+fallback.
+
+{rules}
 ## Events, features and actions
 
 ```mermaid
@@ -213,6 +223,7 @@ Folding and unfolding are observable states, so this one is a state machine.
 | Fold table is clean | {clean} |
 ",
         table = render::io_table(FEATURES),
+        rules = render::rule_table(FEATURES),
         flow = render::io_flowchart(FEATURES),
         diagram = fold::diagram(),
         unhandled = unhandled,

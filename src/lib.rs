@@ -9,7 +9,8 @@
 //!
 //! | Module | For |
 //! |---|---|
-//! | [`feature`] | Controllers with no states: what each feature reacts to and emits |
+//! | [`guard`] | The conditions both layers decide by, shared per [`Domain`] |
+//! | [`feature`] | Controllers with no states: a rule table per feature |
 //! | [`machine`] | Controllers with states: a transition table and its executor |
 //! | [`render`] | Diagrams and tables derived from either declaration |
 //! | [`verify`] | Exhaustive gap reports over either declaration |
@@ -25,12 +26,13 @@
 //! |---|---|
 //! | [`tags!`] | State tag enum + [`Enumerable`] |
 //! | [`events!`] | Event enum + kind enum + [`HasKind`] + [`Enumerable`] |
-//! | [`cond_node!`] | A [`machine::CondNode`] impl |
-//! | [`check!`] | A guard [`machine::Expr`] tree |
+//! | [`cond_node!`] | A [`guard::CondNode`] impl |
+//! | [`check!`] | A guard [`guard::Expr`] tree |
 
 mod enums;
 
 pub mod feature;
+pub mod guard;
 pub mod machine;
 // Builds diagrams and tables for documentation only: no release binary reaches
 // it, and the committed `.md` files verify its output instead.

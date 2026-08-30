@@ -152,10 +152,12 @@ Bigger examples:
 ```
 src/
   lib.rs          // Domain, MachineSpec — library entry points
-  feature.rs      // stateless layer: Feature, FeatureInfo, dispatch
+  guard.rs        // shared by both layers: Cond, OnUnknown
+  guard/          // CondNode, Cx, Memo, Expr
+  feature.rs      // stateless layer: Rule, FeatureInfo, dispatch
   machine.rs      // stateful layer: Machine, dispatch, Taken
-  machine/        // Cond, CondNode, State, Edge, Source, Goto, OnUnknown
-  render.rs       // to_mermaid, coverage, io_table, io_flowchart
+  machine/        // State, Edge, Source, Goto, Ignore
+  render.rs       // to_mermaid, coverage, io_table, rule_table, io_flowchart
 examples/
   door_lock/      // cargo run --example door_lock
   mirrors/        // cargo run --example mirrors

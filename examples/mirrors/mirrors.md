@@ -6,24 +6,38 @@ declarations, so it cannot drift from the code — regenerate with
 
 ## Features
 
-Stateless features, one per file, each declaring what it handles and emits.
+Stateless features, one per file. `handles` and `emits` are read off the rules
+below, so a feature cannot react to or emit anything this table omits.
 
 | feature | handles | emits |
 |---|---|---|
 | `Heating` | `DefogChanged` | `HeatingOn`, `HeatingOff` |
 | `Dimming` | `PowerChanged`, `GearChanged` | `DimmingOn`, `DimmingOff` |
 
+## Rules
+
+One line per `input -> output` rule. Within a feature the order is priority: the
+first rule whose guard holds is the one that runs, so a rule with no guard is a
+fallback.
+
+| feature | when | guard | emits |
+|---|---|---|---|
+| `Heating` | `DefogChanged` | `DefogOn` | `HeatingOn` |
+| `Heating` | `DefogChanged` | else | `HeatingOff` |
+| `Dimming` | `PowerChanged`, `GearChanged` | `PowerOn && !GearReverse` | `DimmingOn` |
+| `Dimming` | `PowerChanged`, `GearChanged` | else | `DimmingOff` |
+
 ## Events, features and actions
 
 ```mermaid
 flowchart LR
     ev_DefogChanged["DefogChanged"] --> ft_Heating["Heating"]
-    ft_Heating["Heating"] --> ac_HeatingOn["HeatingOn"]
-    ft_Heating["Heating"] --> ac_HeatingOff["HeatingOff"]
+    ft_Heating["Heating"] -->|"DefogOn"| ac_HeatingOn["HeatingOn"]
+    ft_Heating["Heating"] -->|else| ac_HeatingOff["HeatingOff"]
     ev_PowerChanged["PowerChanged"] --> ft_Dimming["Dimming"]
     ev_GearChanged["GearChanged"] --> ft_Dimming["Dimming"]
-    ft_Dimming["Dimming"] --> ac_DimmingOn["DimmingOn"]
-    ft_Dimming["Dimming"] --> ac_DimmingOff["DimmingOff"]
+    ft_Dimming["Dimming"] -->|"PowerOn && !GearReverse"| ac_DimmingOn["DimmingOn"]
+    ft_Dimming["Dimming"] -->|else| ac_DimmingOff["DimmingOff"]
 ```
 
 ## Folding

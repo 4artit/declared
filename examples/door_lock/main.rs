@@ -12,7 +12,8 @@
 //! from the event, so `Unlock` is an `Action` on the `UNLOCK` edge and only the
 //! clearing is left to `Unlocked`'s exit.
 
-use chart::machine::{self, Cond, Edge, Goto, Ignore, Machine, OnUnknown, Source, State};
+use chart::guard::{Cond, OnUnknown};
+use chart::machine::{self, Edge, Goto, Ignore, Machine, Source, State};
 use chart::{Domain, MachineSpec, render, verify};
 
 chart::tags! {

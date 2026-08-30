@@ -1,79 +1,121 @@
-//! The stateless layer: one feature of a controller, declaring what it reacts to
-//! and what it does about it.
+//! The stateless layer: one feature of a controller, declared as a table of
+//! rules rather than as a handler.
+//!
+//! A [`Rule`] is one `input -> output` line: the event kinds it is considered
+//! for, the condition that has to hold, and what it emits. Everything a
+//! feature does is therefore readable off its table, which is what
+//! [`FeatureInfo::handles`], [`FeatureInfo::emits`] and the renderers are
+//! derived from.
+//!
+//! This is [`crate::machine::Edge`] with the state axis removed: no `from`, no
+//! `goto`, and `when` is a set because a feature rule routinely covers several
+//! kinds at once.
 
+use crate::guard::{Cx, Expr, Memo, OnUnknown};
 use crate::{Domain, Enumerable, HasKind};
 
-/// What a feature reacts to and what it emits.
+/// One rule of a feature: when it is considered, what must hold, and what it
+/// emits.
+///
+/// When several rules match the same event, **declaration order is priority** —
+/// [`dispatch`] takes the first. A rule with an empty guard
+/// ([`crate::check!`] with no nodes) always matches, which is how a fallback
+/// line is written.
+pub struct Rule<D: Domain> {
+    /// Event kinds this rule is considered for.
+    pub when: &'static [D::EventKind],
+    /// The condition, over the event and the world.
+    pub check: &'static Expr<D>,
+    /// What to do when `check` is undecidable.
+    pub unknown: OnUnknown,
+    /// Actions to run, in order, when this rule is taken.
+    pub emit: &'static [D::Action],
+}
+
+/// One feature's whole declaration: its name and its rules.
 ///
 /// A plain value, so features can be collected into a slice for
-/// [`crate::render::io_table`].
+/// [`crate::render::io_table`]. It carries no handler, so there is nothing a
+/// feature can do that is not in `rules`.
 pub struct FeatureInfo<D: Domain> {
     /// Display name, used in tables and diagrams.
     pub name: &'static str,
-    /// Event kinds this feature reacts to.
-    pub handles: &'static [D::EventKind],
-    /// Actions this feature may emit.
-    pub emits: &'static [D::Action],
+    /// The rules, in priority order.
+    pub rules: &'static [Rule<D>],
 }
 
-/// One feature of a controller: what it reacts to and what it emits.
+impl<D: Domain> FeatureInfo<D> {
+    /// The event kinds some rule is considered for, without repeats.
+    ///
+    /// Returns them in [`Domain::all_kinds`] order rather than the order the
+    /// rules happen to list them, so the tables read the same way every time.
+    pub fn handles(&self) -> Vec<D::EventKind> {
+        D::all_kinds()
+            .iter()
+            .copied()
+            .filter(|k| self.rules.iter().any(|r| r.when.contains(k)))
+            .collect()
+    }
+}
+
+impl<D: Domain> FeatureInfo<D>
+where
+    D::Action: PartialEq,
+{
+    /// The actions some rule may emit, in declaration order, without repeats.
+    pub fn emits(&self) -> Vec<D::Action> {
+        let mut out: Vec<D::Action> = Vec::new();
+        for a in self.rules.iter().flat_map(|r| r.emit) {
+            if !out.contains(a) {
+                out.push(*a);
+            }
+        }
+        out
+    }
+}
+
+/// One feature of a controller. The whole implementation is the table.
 pub trait Feature<D: Domain> {
-    /// This feature's declared inputs and outputs.
+    /// This feature's rules, and the name they are drawn under.
     const INFO: FeatureInfo<D>;
-
-    /// Reacts to `ev` by pushing effects onto `out`. [`dispatch`] checks each
-    /// one against [`FeatureInfo::emits`] before [`Domain::perform`] runs it.
-    ///
-    /// A feature decides, it does not act: `world` is read-only here so that
-    /// [`FeatureInfo::emits`] is the whole truth about what this feature can
-    /// do, which is what the tables and diagrams are drawn from.
-    ///
-    /// - `ev`: the event to react to.
-    /// - `world`: the outside world, read-only.
-    /// - `out`: effects to append, in the order they should run.
-    fn handle(&mut self, ev: &D::Event, world: &D::Env, out: &mut Vec<D::Action>);
 }
 
-/// Runs `f` on `ev` if `f` declared this event's kind, checks that it only
-/// emitted actions it declared, then carries those actions out.
+/// Takes the first rule of `f` that matches `ev` and carries out its actions.
 ///
 /// - `f`: the feature to run.
 /// - `ev`: the event to dispatch.
-/// - `world`: the outside world, read by `f` and mutated by its actions.
+/// - `world`: the outside world, read by the guards and mutated by the actions.
 ///
-/// The action list is this function's own, so a feature's effects land in
-/// `world` before the next feature is dispatched. Two features that declare the
-/// same kind in [`FeatureInfo::handles`] therefore see each other, in the order
-/// the caller dispatches them.
+/// Guards only ever see `&Env` ([`Cx::world`]), so the only way a feature
+/// reaches the world is through [`Rule::emit`] — which is why
+/// [`FeatureInfo::emits`] can be trusted as the whole truth.
 ///
-/// # Panics
+/// A [`Memo`] is built per call, so a guard node shared by several rules, or by
+/// a machine dispatched for the same event, is evaluated once per dispatch.
 ///
-/// In debug builds, panics if `f` emitted an action outside
-/// [`FeatureInfo::emits`] — before any of them runs.
-pub fn dispatch<D, F>(f: &mut F, ev: &D::Event, world: &mut D::Env)
-where
-    D: Domain,
-    D::Action: PartialEq,
-    F: Feature<D>,
-{
-    if !F::INFO.handles.contains(&ev.kind()) {
-        return;
-    }
+/// Actions run before this returns, so a feature's effects land in `world`
+/// before the next feature is dispatched. Two features whose rules cover the
+/// same kind therefore see each other, in the order the caller dispatches them.
+pub fn dispatch<D: Domain>(f: &FeatureInfo<D>, ev: &D::Event, world: &mut D::Env) {
+    let kind = ev.kind();
 
-    // Unallocated until the handler pushes, which the gate above already ruled
-    // out for most events.
-    let mut out = Vec::new();
-    f.handle(ev, &*world, &mut out);
+    // The borrow of `world` ends with `cx`, before the actions mutate it.
+    let hit = {
+        let memo = Memo::new();
+        let cx = Cx::new(ev, &*world, &memo);
+        f.rules
+            .iter()
+            .position(|r| r.when.contains(&kind) && r.unknown.accepts(r.check.eval(&cx)))
+    };
 
-    debug_assert!(
-        out.iter().all(|a| F::INFO.emits.contains(a)),
-        "{}: emitted an action it does not declare -> {out:?}",
-        F::INFO.name,
-    );
+    let Some(hit) = hit else { return };
+    let rule = &f.rules[hit];
 
-    for a in out {
+    for &a in rule.emit {
         D::perform(a, ev, world);
     }
+
+    log::debug!("[chart] {}: {ev:?} -> {:?}", f.name, rule.emit);
 }
 
 /// Event kinds nothing in the controller accounts for.
@@ -91,7 +133,7 @@ pub fn unhandled_kinds<D: Domain>(
     D::all_kinds()
         .iter()
         .copied()
-        .filter(|k| !features.iter().any(|f| f.handles.contains(k)))
+        .filter(|k| !features.iter().any(|f| f.handles().contains(k)))
         .filter(|k| !elsewhere.iter().any(|ks| ks.contains(k)))
         .collect()
 }
@@ -108,6 +150,6 @@ where
     <D::Action as Enumerable>::ALL
         .iter()
         .copied()
-        .filter(|a| !features.iter().any(|f| f.emits.contains(a)))
+        .filter(|a| !features.iter().any(|f| f.emits().contains(a)))
         .collect()
 }

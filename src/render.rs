@@ -5,8 +5,9 @@
 
 use std::fmt::Write as _;
 
-use crate::feature::FeatureInfo;
-use crate::machine::{Edge, Goto, Ignore, OnUnknown, State};
+use crate::feature::{FeatureInfo, Rule};
+use crate::guard::OnUnknown;
+use crate::machine::{Edge, Goto, Ignore, State};
 use crate::{Domain, Enumerable, MachineSpec};
 
 /// Builds a mermaid `stateDiagram-v2` diagram from a transition table.
@@ -130,16 +131,49 @@ fn join_actions<A: std::fmt::Debug>(actions: &[A]) -> String {
 /// - `features`: the feature list to render.
 ///
 /// Returns a markdown table.
-pub fn io_table<D: Domain>(features: &[FeatureInfo<D>]) -> String {
+pub fn io_table<D: Domain>(features: &[FeatureInfo<D>]) -> String
+where
+    D::Action: PartialEq,
+{
     let mut s = String::from("| feature | handles | emits |\n|---|---|---|\n");
     for f in features {
         let _ = writeln!(
             s,
             "| `{}` | {} | {} |",
             f.name,
-            join_or_dash(f.handles),
-            join_or_dash(f.emits)
+            join_or_dash(&f.handles()),
+            join_or_dash(&f.emits())
         );
+    }
+    s
+}
+
+/// Tabulates every rule of every feature: the `input -> output` lines a feature
+/// is made of.
+///
+/// - `features`: the feature list to render.
+///
+/// Returns a markdown table. Row order is declaration order, which is also
+/// priority — the first matching rule of a feature is the one that runs.
+pub fn rule_table<D: Domain>(features: &[FeatureInfo<D>]) -> String {
+    let mut s = String::from("| feature | when | guard | emits |\n|---|---|---|---|\n");
+    for f in features {
+        for (i, r) in f.rules.iter().enumerate() {
+            let guard = r.check.render();
+            let unknown = if r.unknown == OnUnknown::Allow {
+                " (unknown=Allow)"
+            } else {
+                ""
+            };
+            let _ = writeln!(
+                s,
+                "| `{}` | {} | {}{unknown} | {} |",
+                f.name,
+                join_or_dash(r.when),
+                guard_cell(&guard, f.rules, i),
+                join_or_dash(r.emit),
+            );
+        }
     }
     s
 }
@@ -148,20 +182,53 @@ pub fn io_table<D: Domain>(features: &[FeatureInfo<D>]) -> String {
 ///
 /// - `features`: the feature list to render.
 ///
-/// Returns the diagram source. Node ids carry a prefix because a feature and
-/// the action it emits routinely share a name, which would otherwise merge
-/// them into one self-looping node.
+/// Returns the diagram source. The guard of the rule that produces an action
+/// labels the arrow to it, so the diagram says *why* an action is emitted and
+/// not only that it can be. Node ids carry a prefix because a feature and the
+/// action it emits routinely share a name, which would otherwise merge them
+/// into one self-looping node.
 pub fn io_flowchart<D: Domain>(features: &[FeatureInfo<D>]) -> String {
     let mut s = String::from("flowchart LR\n");
     for f in features {
-        for k in f.handles {
+        for k in f.handles() {
             let _ = writeln!(s, "    ev_{k:?}[\"{k:?}\"] --> ft_{0}[\"{0}\"]", f.name);
         }
-        for a in f.emits {
-            let _ = writeln!(s, "    ft_{0}[\"{0}\"] --> ac_{a:?}[\"{a:?}\"]", f.name);
+        for (i, r) in f.rules.iter().enumerate() {
+            let guard = r.check.render();
+            let label = match (guard.is_empty(), is_fallback(f.rules, i)) {
+                (false, _) => format!("|\"{guard}\"|"),
+                (true, true) => "|else|".to_string(),
+                (true, false) => String::new(),
+            };
+            for a in r.emit {
+                let _ = writeln!(
+                    s,
+                    "    ft_{0}[\"{0}\"] -->{label} ac_{a:?}[\"{a:?}\"]",
+                    f.name
+                );
+            }
         }
     }
     s
+}
+
+/// Whether an unguarded rule is a fallback rather than an unconditional one:
+/// an earlier rule of the same feature covers one of its kinds, so this line is
+/// reached only when that one did not match.
+fn is_fallback<D: Domain>(rules: &[Rule<D>], i: usize) -> bool {
+    rules[..i]
+        .iter()
+        .any(|e| e.when.iter().any(|k| rules[i].when.contains(k)))
+}
+
+/// The guard column of one rule: the expression, `else` for a fallback, or a
+/// dash for a rule that is genuinely unconditional.
+fn guard_cell<D: Domain>(guard: &str, rules: &[Rule<D>], i: usize) -> String {
+    match (guard.is_empty(), is_fallback(rules, i)) {
+        (false, _) => format!("`{guard}`"),
+        (true, true) => "else".to_string(),
+        (true, false) => "—".to_string(),
+    }
 }
 
 fn join_or_dash<T: std::fmt::Debug>(items: &[T]) -> String {

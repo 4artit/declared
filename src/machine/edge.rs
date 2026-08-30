@@ -1,8 +1,7 @@
 //! One row of the transition table.
 
+use crate::guard::{Expr, OnUnknown};
 use crate::{ActionOf, Enumerable, KindOf, MachineSpec};
-
-use super::Expr;
 
 /// The set of states an edge departs from — a state list, not a guard
 /// condition.
@@ -41,15 +40,6 @@ pub enum Goto<M: MachineSpec> {
     /// Stay in the current state. [`super::State::exit`] and
     /// [`super::State::entry`] do **not** run.
     Internal,
-}
-
-/// What to do when a guard evaluates to [`super::Cond::Unknown`].
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum OnUnknown {
-    /// Do not transition when undecidable (fail-closed).
-    Deny,
-    /// Transition when undecidable.
-    Allow,
 }
 
 /// A single transition.

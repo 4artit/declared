@@ -39,8 +39,9 @@ impl<'a, D: Domain> Cx<'a, D> {
     }
 }
 
-/// Guard evaluation cache, valid for one [`crate::machine::dispatch`]
-/// call, so a node shared by several edges is evaluated only once per event.
+/// Guard evaluation cache, valid for one [`crate::machine::dispatch`] or
+/// [`crate::feature::dispatch`] call, so a node shared by several rows is
+/// evaluated only once per event.
 #[derive(Default)]
 pub struct Memo {
     cache: RefCell<Vec<(&'static str, Cond)>>,
@@ -139,7 +140,7 @@ impl<D: Domain> Expr<D> {
 /// Declares a guard node as a unit struct plus its [`CondNode`] impl.
 ///
 /// ```
-/// # use chart::machine::Cond;
+/// # use chart::guard::Cond;
 /// # #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 /// # pub enum Gear { Reverse, Drive }
 /// # chart::events! { #[derive(Debug)] pub enum Event => Kind { GearChanged(Gear), Tick } }
@@ -164,11 +165,11 @@ macro_rules! cond_node {
         #[derive(Copy, Clone)]
         pub struct $name;
 
-        impl $crate::machine::CondNode<$dom> for $name {
+        impl $crate::guard::CondNode<$dom> for $name {
             fn name(&self) -> &'static str {
                 stringify!($name)
             }
-            fn eval(&self, $cx: &$crate::machine::Cx<'_, $dom>) -> $crate::machine::Cond {
+            fn eval(&self, $cx: &$crate::guard::Cx<'_, $dom>) -> $crate::guard::Cond {
                 $body
             }
         }
@@ -180,19 +181,19 @@ macro_rules! cond_node {
 /// `||` is not supported; use [`Expr::Or`] directly.
 #[macro_export]
 macro_rules! check {
-    () => { &$crate::machine::Expr::Always };
+    () => { &$crate::guard::Expr::Always };
     (! $n:ident && $($rest:tt)*) => {
-        &$crate::machine::Expr::And(
-            &$crate::machine::Expr::Not(&$crate::machine::Expr::Node(&$n)),
+        &$crate::guard::Expr::And(
+            &$crate::guard::Expr::Not(&$crate::guard::Expr::Node(&$n)),
             $crate::check!($($rest)*),
         )
     };
     ($n:ident && $($rest:tt)*) => {
-        &$crate::machine::Expr::And(
-            &$crate::machine::Expr::Node(&$n),
+        &$crate::guard::Expr::And(
+            &$crate::guard::Expr::Node(&$n),
             $crate::check!($($rest)*),
         )
     };
-    (! $n:ident) => { &$crate::machine::Expr::Not(&$crate::machine::Expr::Node(&$n)) };
-    ($n:ident) => { &$crate::machine::Expr::Node(&$n) };
+    (! $n:ident) => { &$crate::guard::Expr::Not(&$crate::guard::Expr::Node(&$n)) };
+    ($n:ident) => { &$crate::guard::Expr::Node(&$n) };
 }

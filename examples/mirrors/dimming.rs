@@ -1,31 +1,37 @@
 //! Mirror dimming. A function of the current power state and gear, so it keeps
 //! no state either.
+//!
+//! Both rules cover both kinds: whichever of the two signals changed, the
+//! answer is read from the world, which the caller has already updated. That is
+//! why the condition is written once rather than once per event.
 
-use chart::feature::{Feature, FeatureInfo};
+use chart::feature::{Feature, FeatureInfo, Rule};
+use chart::guard::OnUnknown;
 
-use crate::{Action, Event, Kind, Mirrors, World};
+use crate::guards::{GearReverse, PowerOn};
+use crate::{Action, Kind, Mirrors};
 
-#[derive(Default)]
 pub struct Dimming;
+
+/// The two signals dimming is a function of.
+const INPUTS: &[Kind] = &[Kind::PowerChanged, Kind::GearChanged];
 
 impl Feature<Mirrors> for Dimming {
     const INFO: FeatureInfo<Mirrors> = FeatureInfo {
         name: "Dimming",
-        handles: &[Kind::PowerChanged, Kind::GearChanged],
-        emits: &[Action::DimmingOn, Action::DimmingOff],
+        rules: &[
+            Rule {
+                when: INPUTS,
+                check: chart::check!(PowerOn && !GearReverse),
+                unknown: OnUnknown::Deny,
+                emit: &[Action::DimmingOn],
+            },
+            Rule {
+                when: INPUTS,
+                check: chart::check!(),
+                unknown: OnUnknown::Deny,
+                emit: &[Action::DimmingOff],
+            },
+        ],
     };
-
-    fn handle(&mut self, ev: &Event, world: &World, out: &mut Vec<Action>) {
-        let (power, gear) = match ev {
-            Event::PowerChanged(on) => (*on, world.gear_reverse),
-            Event::GearChanged(rev) => (world.power_on, *rev),
-            _ => return,
-        };
-
-        out.push(if power && !gear {
-            Action::DimmingOn
-        } else {
-            Action::DimmingOff
-        });
-    }
 }

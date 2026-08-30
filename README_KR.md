@@ -147,10 +147,12 @@ fn main() {
 ```
 src/
   lib.rs          // Domain, MachineSpec — 라이브러리 진입점
-  feature.rs      // 상태 없는 층: Feature, FeatureInfo, dispatch
+  guard.rs        // 두 층이 함께 쓰는 조건: Cond, OnUnknown
+  guard/          // CondNode, Cx, Memo, Expr
+  feature.rs      // 상태 없는 층: Rule, FeatureInfo, dispatch
   machine.rs      // 상태 있는 층: Machine, dispatch, Taken
-  machine/        // Cond, CondNode, State, Edge, Source, Goto, OnUnknown
-  render.rs       // to_mermaid, coverage, io_table, io_flowchart
+  machine/        // State, Edge, Source, Goto, Ignore
+  render.rs       // to_mermaid, coverage, io_table, rule_table, io_flowchart
 examples/
   door_lock/      // cargo run --example door_lock
   mirrors/        // cargo run --example mirrors

@@ -1,26 +1,31 @@
 //! Mirror heating. Follows the defog signal, so it keeps no state.
 
-use chart::feature::{Feature, FeatureInfo};
+use chart::feature::{Feature, FeatureInfo, Rule};
+use chart::guard::OnUnknown;
 
-use crate::{Action, Event, Kind, Mirrors, World};
+use crate::guards::DefogOn;
+use crate::{Action, Kind, Mirrors};
 
-#[derive(Default)]
 pub struct Heating;
 
 impl Feature<Mirrors> for Heating {
     const INFO: FeatureInfo<Mirrors> = FeatureInfo {
         name: "Heating",
-        handles: &[Kind::DefogChanged],
-        emits: &[Action::HeatingOn, Action::HeatingOff],
+        rules: &[
+            Rule {
+                when: &[Kind::DefogChanged],
+                check: chart::check!(DefogOn),
+                unknown: OnUnknown::Deny,
+                emit: &[Action::HeatingOn],
+            },
+            // No guard: the fallback line, reached only when the one above did
+            // not match.
+            Rule {
+                when: &[Kind::DefogChanged],
+                check: chart::check!(),
+                unknown: OnUnknown::Deny,
+                emit: &[Action::HeatingOff],
+            },
+        ],
     };
-
-    fn handle(&mut self, ev: &Event, _world: &World, out: &mut Vec<Action>) {
-        if let Event::DefogChanged(on) = ev {
-            out.push(if *on {
-                Action::HeatingOn
-            } else {
-                Action::HeatingOff
-            });
-        }
-    }
 }

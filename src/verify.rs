@@ -20,7 +20,7 @@ pub struct Coverage {
     pub overlaps: Vec<(String, String, Vec<&'static str>)>,
     /// States that cannot be reached from the initial state.
     pub unreachable: Vec<String>,
-    /// Guard node names used by more than one node type. The [`crate::machine::Memo`] key
+    /// Guard node names used by more than one node type. The [`crate::guard::Memo`] key
     /// is the name, so names must be unique.
     pub duplicate_node_names: Vec<&'static str>,
     /// Edge ids carried by more than one edge. The id names a transition in

@@ -4,10 +4,12 @@
 //! The spec names [`crate::Mirrors`] as its domain, sharing that controller's
 //! events, actions, guards and `perform`.
 
-use chart::machine::{Cond, Edge, Goto, Ignore, Machine, OnUnknown, Source, State};
+use chart::guard::OnUnknown;
+use chart::machine::{Edge, Goto, Ignore, Machine, Source, State};
 use chart::verify::Coverage;
 use chart::{MachineSpec, render, verify};
 
+use crate::guards::{AtFolded, AtUnfolded, PowerOff, PowerOn, SpeedAllowsFold, SpeedForcesUnfold};
 use crate::{Kind, Mirrors, StateAction};
 
 chart::tags! {
@@ -33,24 +35,6 @@ impl MachineSpec for FoldSm {
 /// The state the mirror is already in when the controller starts. Not a const on
 /// the spec: a machine resumes, so this has to stay a runtime choice.
 pub const INITIAL: FoldTag = FoldTag::Unfolded;
-
-// ─────────────────────────────────────────── guards
-// Declared against the domain, so a second machine could reuse them.
-
-chart::cond_node!(Mirrors, PowerOff, |cx| Cond::from(!cx.world.power_on));
-chart::cond_node!(Mirrors, PowerOn, |cx| Cond::from(cx.world.power_on));
-chart::cond_node!(Mirrors, SpeedAllowsFold, |cx| Cond::from(
-    cx.world.speed < 15.0
-));
-chart::cond_node!(Mirrors, SpeedForcesUnfold, |cx| Cond::from(
-    cx.world.speed >= 40.0
-));
-chart::cond_node!(Mirrors, AtFolded, |cx| Cond::from(
-    cx.world.fold_position <= 0.01
-));
-chart::cond_node!(Mirrors, AtUnfolded, |cx| Cond::from(
-    cx.world.fold_position >= 0.99
-));
 
 // ─────────────────────────────────────────── table
 

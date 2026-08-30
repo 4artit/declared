@@ -1,15 +1,12 @@
 //! The state machine layer: a transition table and the executor that runs it.
 
-mod cond;
 mod edge;
-mod node;
 mod state;
 
-pub use cond::Cond;
-pub use edge::{Edge, Goto, Ignore, OnUnknown, Source};
-pub use node::{CondNode, Cx, Expr, Memo};
+pub use edge::{Edge, Goto, Ignore, Source};
 pub use state::State;
 
+use crate::guard::{Cx, Memo};
 use crate::{
     ActionOf, Domain, EnvOf, EventOf, HasKind, KindOf, MachineSpec, StateActionOf, verify,
 };
@@ -139,13 +136,7 @@ impl<M: MachineSpec> Machine<M> {
         let cx = Cx::new(ev, world, &memo);
 
         M::EDGES.iter().position(|e| {
-            e.when == kind
-                && e.from.matches(self.tag)
-                && match e.check.eval(&cx) {
-                    Cond::True => true,
-                    Cond::False => false,
-                    Cond::Unknown => e.unknown == OnUnknown::Allow,
-                }
+            e.when == kind && e.from.matches(self.tag) && e.unknown.accepts(e.check.eval(&cx))
         })
     }
 
@@ -193,7 +184,10 @@ pub fn dispatch<M: MachineSpec>(
 
     let Some(hit) = m.select(ev, world, kind) else {
         if !M::IGNORES.iter().any(|i| i.matches(m.tag, kind)) {
-            log::warn!("[chart] unhandled: {:?} x {ev:?} (no edge, no ignore)", m.tag);
+            log::warn!(
+                "[chart] unhandled: {:?} x {ev:?} (no edge, no ignore)",
+                m.tag
+            );
         }
         return None;
     };
@@ -223,7 +217,10 @@ pub fn dispatch<M: MachineSpec>(
 
     // `log::debug!` evaluates its arguments only when the level is enabled, so
     // this formats nothing in a release build with logging off.
-    log::debug!("[chart] {id}: {ev:?} -> {:?} {exit:?} {run:?} {entry:?}", m.tag);
+    log::debug!(
+        "[chart] {id}: {ev:?} -> {:?} {exit:?} {run:?} {entry:?}",
+        m.tag
+    );
 
     Some(Taken {
         edge: id,
