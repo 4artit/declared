@@ -16,10 +16,11 @@ mod fold;
 mod heating;
 
 use chart::feature::{self, Feature, FeatureInfo};
+use chart::machine::{self, Machine};
 use chart::{Domain, HasKind, render};
 
 use dimming::Dimming;
-use fold::Fold;
+use fold::FoldSm;
 use heating::Heating;
 
 chart::events! {
@@ -60,7 +61,6 @@ pub struct World {
     pub gear_reverse: bool,
     pub speed: f32,
     pub fold_position: f32,
-    pub effects: Vec<String>,
 }
 
 /// The vocabulary both layers work in.
@@ -74,14 +74,14 @@ impl Domain for Mirrors {
     type Env = World;
 
     /// The world is touched here and in `perform_state`, nowhere else.
-    fn perform(action: Action, _ev: &Event, world: &mut World) {
+    fn perform(action: Action, _ev: &Event, _world: &mut World) {
         let line = match action {
             Action::HeatingOn => "heating on",
             Action::HeatingOff => "heating off",
             Action::DimmingOn => "dimming on",
             Action::DimmingOff => "dimming off",
         };
-        world.effects.push(line.to_string());
+        log::debug!("{}", line);
     }
 
     fn perform_state(action: StateAction, world: &mut World) {
@@ -89,7 +89,7 @@ impl Domain for Mirrors {
             StateAction::Fold => format!("fold (speed {:.0})", world.speed),
             StateAction::Unfold => "unfold".to_string(),
         };
-        world.effects.push(line);
+        log::debug!("{}", line);
     }
 }
 
@@ -98,11 +98,20 @@ impl Domain for Mirrors {
 /// Kept by hand, next to the router so that a missing entry is visible.
 const FEATURES: &[FeatureInfo<Mirrors>] = &[Heating::INFO, Dimming::INFO];
 
-#[derive(Default)]
 struct Controller {
     heating: Heating,
     dimming: Dimming,
-    fold: Fold,
+    fold: Machine<FoldSm>,
+}
+
+impl Default for Controller {
+    fn default() -> Self {
+        Self {
+            heating: Heating,
+            dimming: Dimming,
+            fold: fold::machine(),
+        }
+    }
 }
 
 impl Controller {
@@ -113,26 +122,9 @@ impl Controller {
             return;
         }
 
-        // Stateless layer: actions are collected, then carried out here.
-        let mut actions = Vec::new();
-        feature::dispatch(&mut self.heating, ev, world, &mut actions);
-        feature::dispatch(&mut self.dimming, ev, world, &mut actions);
-        for &a in &actions {
-            Mirrors::perform(a, ev, world);
-        }
-
-        // Stateful layer: the machine carries its own out and reports back.
-        let taken = self.fold.dispatch(ev, world);
-
-        // Every effect of the fold machine is an entry action.
-        match (actions.is_empty(), taken) {
-            (true, None) => println!("  -> (nothing)"),
-            (false, None) => println!("  -> {actions:?}"),
-            (true, Some(t)) => println!("  -> [fold:{}] {:?}", t.edge, t.entry),
-            (false, Some(t)) => {
-                println!("  -> {actions:?} + [fold:{}] {:?}", t.edge, t.entry)
-            }
-        }
+        feature::dispatch(&mut self.heating, ev, world);
+        feature::dispatch(&mut self.dimming, ev, world);
+        machine::dispatch(&mut self.fold, ev, world);
     }
 }
 
@@ -169,8 +161,6 @@ fn main() {
         apply_signal(ev, &mut w);
         c.handle_event(ev, &mut w);
     }
-
-    println!("\neffects: {:#?}", w.effects);
 
     let path = "examples/mirrors/mirrors.md";
     std::fs::write(path, document()).expect("failed to write mirrors.md");

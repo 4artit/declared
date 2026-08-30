@@ -12,7 +12,7 @@
 //! from the event, so `Unlock` is an `Action` on the `UNLOCK` edge and only the
 //! clearing is left to `Unlocked`'s exit.
 
-use chart::machine::{Cond, Edge, Goto, Ignore, Machine, OnUnknown, Source, State};
+use chart::machine::{self, Cond, Edge, Goto, Ignore, Machine, OnUnknown, Source, State};
 use chart::{Domain, MachineSpec, render, verify};
 
 chart::tags! {
@@ -111,7 +111,15 @@ impl Domain for Door {
 impl MachineSpec for Door {
     type Domain = Door;
     type Tag = Tag;
+
+    const STATES: &'static [State<Door>] = STATES;
+    const EDGES: &'static [Edge<Door>] = EDGES;
+    const IGNORES: &'static [Ignore<Door>] = IGNORES;
 }
+
+/// A machine resumes rather than starts, so the state it resumes in stays a
+/// runtime choice and is not a const on the spec.
+const INITIAL: Tag = Tag::Locked;
 
 chart::cond_node!(Door, CodeCorrect, |cx| match cx.event {
     Event::EnterCode(code) => Cond::from(*code == cx.world.correct_code),
@@ -246,7 +254,8 @@ fn main() {
     };
     // A machine resumes: this tag stands in for what a real controller would
     // read back from the lock, and `Locked`'s entry does not run here.
-    let mut m = Machine::new(Tag::Locked, STATES, EDGES, IGNORES);
+    // The table now comes from the spec, so the spec is what names the machine.
+    let mut m = Machine::<Door>::new(INITIAL);
 
     let steps: &[(&str, Event)] = &[
         ("wrong code, 1st", Event::EnterCode(9999)),
@@ -264,21 +273,21 @@ fn main() {
     println!("state = {:?}", m.tag());
     for (desc, ev) in steps {
         println!("dispatch: {desc} ({ev:?})");
-        if let Some(taken) = m.dispatch(ev, &mut world) {
+        if let Some(taken) = machine::dispatch(&mut m, ev, &mut world) {
             println!("  edge = {}, state = {:?}", taken.edge, m.tag());
         } else {
             println!("  (ignored)");
         }
     }
 
-    let diagram = render::to_mermaid::<Door>(Tag::Locked, EDGES, STATES);
+    let diagram = render::to_mermaid::<Door>(INITIAL, EDGES, STATES);
     let md = format!("# Door lock FSM\n\n```mermaid\n{diagram}```\n");
     std::fs::write("examples/door_lock/door_lock.md", &md)
         .expect("failed to write examples/door_lock/door_lock.md");
     println!("\nmermaid diagram written to examples/door_lock/door_lock.md");
 
     // A defect fails the run rather than scrolling past in the output.
-    let coverage = verify::coverage::<Door>(Tag::Locked, EDGES, IGNORES);
+    let coverage = verify::coverage::<Door>(INITIAL, EDGES, IGNORES);
     assert!(coverage.is_clean(), "{coverage:?}");
     println!("coverage: clean");
 }

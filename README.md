@@ -42,7 +42,7 @@ chart = { path = "../chart" }
 A two-state light switch:
 
 ```rust
-use chart::machine::{Edge, Goto, Ignore, Machine, OnUnknown, Source, State};
+use chart::machine::{self, Edge, Goto, Ignore, Machine, OnUnknown, Source, State};
 use chart::{Domain, MachineSpec};
 
 chart::tags! { enum Tag { Off, On } }
@@ -86,6 +86,10 @@ impl Domain for Light {
 impl MachineSpec for Light {
     type Domain = Light;
     type Tag = Tag;
+
+    const STATES: &'static [State<Light>] = STATES;
+    const EDGES: &'static [Edge<Light>] = EDGES;
+    const IGNORES: &'static [Ignore<Light>] = IGNORES;
 }
 
 static STATES: &[State<Light>] = &[
@@ -108,9 +112,9 @@ fn main() {
     let mut world = Env;
     // A machine resumes rather than starts: `Tag::Off` says the lamp is
     // already off, so `Off`'s entry action does not run here.
-    let mut m = Machine::new(Tag::Off, STATES, EDGES, IGNORES);
-    m.dispatch(&Event::Toggle, &mut world); // -> click, on
-    m.dispatch(&Event::Toggle, &mut world); // -> click, off
+    let mut m = Machine::<Light>::new(Tag::Off);
+    machine::dispatch(&mut m, &Event::Toggle, &mut world); // -> click, on
+    machine::dispatch(&mut m, &Event::Toggle, &mut world); // -> click, off
 }
 ```
 
@@ -123,7 +127,7 @@ Bigger examples:
 
 ## What you get for declaring instead of coding
 
-- **A runtime.** `Machine::dispatch` (or `feature::dispatch`) reads the same
+- **A runtime.** `machine::dispatch` (or `feature::dispatch`) reads the same
   table you wrote — no separate interpretation step to fall out of sync.
 - **A diagram.** `render::to_mermaid` turns the transition table into a
   `stateDiagram-v2` you can drop straight into docs, or convert to PlantUML
@@ -149,7 +153,7 @@ Bigger examples:
 src/
   lib.rs          // Domain, MachineSpec — library entry points
   feature.rs      // stateless layer: Feature, FeatureInfo, dispatch
-  machine.rs      // stateful layer: Machine, Taken
+  machine.rs      // stateful layer: Machine, dispatch, Taken
   machine/        // Cond, CondNode, State, Edge, Source, Goto, OnUnknown
   render.rs       // to_mermaid, coverage, io_table, io_flowchart
 examples/

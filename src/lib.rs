@@ -121,8 +121,14 @@ pub trait Domain: Sized + 'static {
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum NoAction {}
 
-/// One state machine's shape: which [`Domain`] it belongs to and what its
-/// states are. A domain may name several of these, or none.
+/// One state machine's whole declaration: which [`Domain`] it belongs to, what
+/// its states are, and the table over them. A domain may name several of these,
+/// or none.
+///
+/// Holding the table here is what [`feature::FeatureInfo`] does for the other
+/// layer — the declaration lives on the type, so [`machine::dispatch`] needs
+/// only an instance. [`verify`] and [`render`] still take tables as arguments,
+/// so a check can be run against a table no machine is built from.
 pub trait MachineSpec: Sized + 'static {
     /// The vocabulary this machine works in.
     type Domain: Domain;
@@ -130,6 +136,16 @@ pub trait MachineSpec: Sized + 'static {
     /// State identifier. [`tags!`] generates this together with its
     /// [`Enumerable`] impl.
     type Tag: Enumerable;
+
+    /// The states, with their entry and exit effects.
+    const STATES: &'static [machine::State<Self>];
+
+    /// The transitions, in priority order: [`machine::dispatch`] takes the
+    /// first edge that matches.
+    const EDGES: &'static [machine::Edge<Self>];
+
+    /// The combinations deliberately left alone, each with its reason.
+    const IGNORES: &'static [machine::Ignore<Self>];
 
     /// The states [`verify::coverage`] walks. Defaults to [`Enumerable::ALL`];
     /// override only to check a subset. It scopes the check alone — dispatch

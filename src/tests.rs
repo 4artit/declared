@@ -11,7 +11,7 @@ use std::cell::Cell;
 
 use super::feature::{self, Feature, FeatureInfo};
 use super::machine::{
-    Cond, Cx, Edge, Expr, Goto, Ignore, Machine, Memo, OnUnknown, Source, State, Taken,
+    self, Cond, Cx, Edge, Expr, Goto, Ignore, Machine, Memo, OnUnknown, Source, State, Taken,
 };
 use super::{Domain, Enumerable, HasKind, MachineSpec, render, verify};
 
@@ -94,6 +94,10 @@ impl Domain for RearCam {
 impl MachineSpec for RearCam {
     type Domain = RearCam;
     type Tag = Tag;
+
+    const STATES: &'static [State<RearCam>] = STATES;
+    const EDGES: &'static [Edge<RearCam>] = EDGES;
+    const IGNORES: &'static [Ignore<RearCam>] = IGNORES;
 }
 
 // ─────────────────────────────────────────── guards
@@ -183,17 +187,17 @@ static IGNORES: &[Ignore<RearCam>] = &[
     },
 ];
 
-fn machine() -> Machine<RearCam> {
-    Machine::new(Tag::Off, STATES, EDGES, IGNORES)
+fn off() -> Machine<RearCam> {
+    Machine::new(Tag::Off)
 }
 
 fn showing() -> (Machine<RearCam>, Env) {
-    let mut m = machine();
+    let mut m = off();
     let mut w = Env {
         speed: Some(10.0),
         ..Default::default()
     };
-    m.dispatch(&Event::GearChanged(Gear::Reverse), &mut w);
+    machine::dispatch(&mut m, &Event::GearChanged(Gear::Reverse), &mut w);
     assert_eq!(m.tag(), Tag::Showing);
     w.performed.clear();
     w.performed_for.clear();
@@ -204,14 +208,13 @@ fn showing() -> (Machine<RearCam>, Env) {
 
 #[test]
 fn enters_showing_and_runs_entry_action() {
-    let mut m = machine();
+    let mut m = off();
     let mut w = Env {
         speed: Some(10.0),
         ..Default::default()
     };
 
-    let taken = m
-        .dispatch(&Event::GearChanged(Gear::Reverse), &mut w)
+    let taken = machine::dispatch(&mut m, &Event::GearChanged(Gear::Reverse), &mut w)
         .unwrap();
 
     assert_eq!(taken.edge, "CAM_ON");
@@ -234,10 +237,10 @@ fn the_initial_state_is_resumed_not_entered() {
         ..Default::default()
     };
 
-    let mut m = Machine::new(Tag::Showing, STATES, EDGES, IGNORES);
+    let mut m = Machine::<RearCam>::new(Tag::Showing);
     assert!(w.performed.is_empty(), "ShowCamera must not be replayed");
 
-    m.dispatch(&Event::GearChanged(Gear::Drive), &mut w)
+    machine::dispatch(&mut m, &Event::GearChanged(Gear::Drive), &mut w)
         .unwrap();
 
     assert_eq!(w.performed, vec![Action::HideCamera]);
@@ -248,14 +251,13 @@ fn the_initial_state_is_resumed_not_entered() {
 /// than `D`, which a derive would have required.
 #[test]
 fn taken_is_debug_clone_and_eq() {
-    let mut m = machine();
+    let mut m = off();
     let mut w = Env {
         speed: Some(10.0),
         ..Default::default()
     };
 
-    let on = m
-        .dispatch(&Event::GearChanged(Gear::Reverse), &mut w)
+    let on = machine::dispatch(&mut m, &Event::GearChanged(Gear::Reverse), &mut w)
         .unwrap();
 
     assert_eq!(
@@ -264,8 +266,7 @@ fn taken_is_debug_clone_and_eq() {
     );
     assert_eq!(on.clone(), on);
 
-    let off = m
-        .dispatch(&Event::GearChanged(Gear::Drive), &mut w)
+    let off = machine::dispatch(&mut m, &Event::GearChanged(Gear::Drive), &mut w)
         .unwrap();
     assert_ne!(off, on);
 }
@@ -309,7 +310,7 @@ fn taken_eq_compares_every_field() {
 fn exit_action_runs_on_leaving() {
     let (mut m, mut w) = showing();
 
-    m.dispatch(&Event::GearChanged(Gear::Drive), &mut w);
+    machine::dispatch(&mut m, &Event::GearChanged(Gear::Drive), &mut w);
 
     assert_eq!(m.tag(), Tag::Off);
     assert_eq!(w.performed, vec![Action::HideCamera]);
@@ -318,14 +319,14 @@ fn exit_action_runs_on_leaving() {
 
 #[test]
 fn exit_and_entry_actions_run_in_order_across_a_round_trip() {
-    let mut m = machine();
+    let mut m = off();
     let mut w = Env {
         speed: Some(10.0),
         ..Default::default()
     };
 
-    m.dispatch(&Event::GearChanged(Gear::Reverse), &mut w);
-    m.dispatch(&Event::GearChanged(Gear::Drive), &mut w);
+    machine::dispatch(&mut m, &Event::GearChanged(Gear::Reverse), &mut w);
+    machine::dispatch(&mut m, &Event::GearChanged(Gear::Drive), &mut w);
 
     assert_eq!(m.tag(), Tag::Off);
     assert_eq!(w.performed, vec![Action::ShowCamera, Action::HideCamera]);
@@ -336,7 +337,7 @@ fn exit_and_entry_actions_run_in_order_across_a_round_trip() {
 fn internal_transition_skips_exit_and_entry() {
     let (mut m, mut w) = showing();
 
-    let taken = m.dispatch(&Event::SpeedChanged, &mut w).unwrap();
+    let taken = machine::dispatch(&mut m, &Event::SpeedChanged, &mut w).unwrap();
 
     assert_eq!(taken.edge, "CAM_OVERLAY");
     assert_eq!(m.tag(), Tag::Showing);
@@ -346,14 +347,14 @@ fn internal_transition_skips_exit_and_entry() {
 
 #[test]
 fn unknown_denies_transition_when_policy_is_deny() {
-    let mut m = machine();
+    let mut m = off();
     let mut w = Env {
         speed: None, // failed lookup -> SpeedBelowLimit = Unknown
         ..Default::default()
     };
 
     assert!(
-        m.dispatch(&Event::GearChanged(Gear::Reverse), &mut w)
+        machine::dispatch(&mut m, &Event::GearChanged(Gear::Reverse), &mut w)
             .is_none()
     );
     assert_eq!(m.tag(), Tag::Off);
@@ -365,7 +366,7 @@ fn unknown_allows_transition_when_policy_is_allow() {
     let (mut m, mut w) = showing();
 
     w.speed = None; // !SpeedBelowLimit = Unknown, and the policy is Allow
-    let taken = m.dispatch(&Event::SpeedChanged, &mut w).unwrap();
+    let taken = machine::dispatch(&mut m, &Event::SpeedChanged, &mut w).unwrap();
 
     assert_eq!(taken.edge, "CAM_OFF_SPEED");
     assert_eq!(m.tag(), Tag::Off);
@@ -380,17 +381,17 @@ fn declaration_order_is_priority() {
 
     w.speed = Some(20.0); // !SpeedBelowLimit = True -> the earlier CAM_OFF_SPEED
     assert_eq!(
-        m.dispatch(&Event::SpeedChanged, &mut w).unwrap().edge,
+        machine::dispatch(&mut m, &Event::SpeedChanged, &mut w).unwrap().edge,
         "CAM_OFF_SPEED"
     );
 }
 
 #[test]
 fn declared_ignore_is_not_a_hole() {
-    let mut m = machine();
+    let mut m = off();
     let mut w = Env::default();
 
-    assert!(m.dispatch(&Event::PowerChanged, &mut w).is_none());
+    assert!(machine::dispatch(&mut m, &Event::PowerChanged, &mut w).is_none());
     assert_eq!(m.tag(), Tag::Off);
 }
 
@@ -439,7 +440,7 @@ fn internal_table_lists_state_preserving_edges() {
 fn caller_side_queue_processes_events_in_order() {
     use std::collections::VecDeque;
 
-    let mut m = machine();
+    let mut m = off();
     let mut w = Env {
         speed: Some(10.0),
         ..Default::default()
@@ -449,7 +450,7 @@ fn caller_side_queue_processes_events_in_order() {
     let mut pending = VecDeque::from([Event::GearChanged(Gear::Reverse), Event::SpeedChanged]);
     let mut taken = Vec::new();
     while let Some(ev) = pending.pop_front() {
-        if let Some(t) = m.dispatch(&ev, &mut w) {
+        if let Some(t) = machine::dispatch(&mut m, &ev, &mut w) {
             taken.push(t.edge);
         }
     }
@@ -466,7 +467,7 @@ fn perform_sees_the_event_on_an_internal_transition() {
     // CAM_OVERLAY is Goto::Internal, so neither entry nor exit runs. Its action
     // can still read the event, which is the only route to a payload here
     // because Edge::run holds compile-time constants only.
-    let taken = m.dispatch(&Event::SpeedChanged, &mut w).unwrap();
+    let taken = machine::dispatch(&mut m, &Event::SpeedChanged, &mut w).unwrap();
 
     assert_eq!(taken.edge, "CAM_OVERLAY");
     assert_eq!(w.performed, vec![Action::UpdateOverlay]);
@@ -479,7 +480,7 @@ fn perform_sees_the_event_on_an_internal_transition() {
 fn entry_and_exit_actions_are_performed_without_an_event() {
     let (mut m, mut w) = showing();
 
-    m.dispatch(&Event::GearChanged(Gear::Drive), &mut w);
+    machine::dispatch(&mut m, &Event::GearChanged(Gear::Drive), &mut w);
 
     assert_eq!(w.performed, vec![Action::HideCamera]);
     assert!(w.performed_for.is_empty());
@@ -648,6 +649,10 @@ impl MachineSpec for PartialCam {
     type Domain = PartialCam;
     type Tag = Tag;
 
+    const STATES: &'static [State<PartialCam>] = PARTIAL_STATES;
+    const EDGES: &'static [Edge<PartialCam>] = PARTIAL_EDGES;
+    const IGNORES: &'static [Ignore<PartialCam>] = PARTIAL_IGNORES;
+
     fn all_tags() -> &'static [Tag] {
         &[Tag::Off]
     }
@@ -680,7 +685,7 @@ static PARTIAL_IGNORES: &[Ignore<PartialCam>] = &[Ignore {
 #[test]
 #[should_panic(expected = "edge TO_UNDECLARED goes to Showing")]
 fn an_edge_targeting_a_tag_outside_the_state_table_is_rejected() {
-    let _ = Machine::new(Tag::Off, PARTIAL_STATES, PARTIAL_EDGES, PARTIAL_IGNORES);
+    let _ = Machine::<PartialCam>::new(Tag::Off);
 }
 
 /// Narrowing `all_tags` scopes the walk: only `Off` is checked, so `Showing`
@@ -824,7 +829,29 @@ struct ChainSm;
 impl MachineSpec for ChainSm {
     type Domain = RearCam;
     type Tag = ChainTag;
+
+    const STATES: &'static [State<ChainSm>] = CHAIN_STATES;
+    const EDGES: &'static [Edge<ChainSm>] = CHAIN_EDGES;
+    const IGNORES: &'static [Ignore<ChainSm>] = &[];
 }
+
+static CHAIN_STATES: &[State<ChainSm>] = &[
+    State {
+        tag: ChainTag::First,
+        entry: &[],
+        exit: &[],
+    },
+    State {
+        tag: ChainTag::Middle,
+        entry: &[],
+        exit: &[],
+    },
+    State {
+        tag: ChainTag::Last,
+        entry: &[],
+        exit: &[],
+    },
+];
 
 static CHAIN_EDGES: &[Edge<ChainSm>] = &[
     // Declared before the edge that makes `Middle` reachable at all.
@@ -877,6 +904,10 @@ impl Domain for Broken {
 impl MachineSpec for Broken {
     type Domain = Broken;
     type Tag = Tag;
+
+    const STATES: &'static [State<Broken>] = BROKEN_STATES;
+    const EDGES: &'static [Edge<Broken>] = BROKEN_EDGES;
+    const IGNORES: &'static [Ignore<Broken>] = BROKEN_IGNORES;
 }
 
 crate::cond_node!(Broken, Duplicate, |_cx| Cond::True);
@@ -1096,16 +1127,28 @@ static CAMERA_FEATURES: &[FeatureInfo<RearCam>] = &[Camera::INFO, Overlay::INFO]
 fn dispatch_runs_only_the_declared_kinds() {
     let mut cam = Camera;
     let mut w = Env::default();
-    let mut out = Vec::new();
 
-    // Declared: reaches the handler.
-    feature::dispatch(&mut cam, &Event::GearChanged(Gear::Reverse), &w, &mut out);
-    assert_eq!(out, vec![Action::ShowCamera]);
+    // Declared: reaches the handler, and dispatch carries the effect out.
+    feature::dispatch(&mut cam, &Event::GearChanged(Gear::Reverse), &mut w);
+    assert_eq!(w.performed, vec![Action::ShowCamera]);
+    assert!(w.camera_visible);
 
     // Not declared: the handler never runs, so nothing is emitted.
     w.speed = Some(10.0);
-    feature::dispatch(&mut cam, &Event::SpeedChanged, &w, &mut out);
-    assert_eq!(out, vec![Action::ShowCamera]);
+    feature::dispatch(&mut cam, &Event::SpeedChanged, &mut w);
+    assert_eq!(w.performed, vec![Action::ShowCamera]);
+}
+
+/// The event reaches `perform`, so an action may read a value off its payload
+/// the way an edge's `run` actions can.
+#[test]
+fn dispatch_performs_with_the_event_that_caused_it() {
+    let mut w = Env::default();
+
+    feature::dispatch(&mut Camera, &Event::GearChanged(Gear::Drive), &mut w);
+
+    assert_eq!(w.performed, vec![Action::HideCamera]);
+    assert_eq!(w.performed_for, vec![Kind::GearChanged]);
 }
 
 #[test]
@@ -1200,20 +1243,15 @@ impl Feature<RearCam> for Liar {
 /// is never given the chance on a kind it did not declare.
 #[test]
 fn dispatch_skips_an_undeclared_kind_before_the_handler() {
-    let mut out = Vec::new();
+    let mut w = Env::default();
 
-    feature::dispatch(&mut Liar, &Event::SpeedChanged, &Env::default(), &mut out);
+    feature::dispatch(&mut Liar, &Event::SpeedChanged, &mut w);
 
-    assert!(out.is_empty());
+    assert!(w.performed.is_empty());
 }
 
 #[test]
 #[should_panic(expected = "Liar: emitted an action it does not declare")]
 fn dispatch_rejects_an_undeclared_action() {
-    feature::dispatch(
-        &mut Liar,
-        &Event::GearChanged(Gear::Reverse),
-        &Env::default(),
-        &mut Vec::new(),
-    );
+    feature::dispatch(&mut Liar, &Event::GearChanged(Gear::Reverse), &mut Env::default());
 }

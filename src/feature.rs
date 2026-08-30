@@ -24,20 +24,33 @@ pub trait Feature<D: Domain> {
     /// Reacts to `ev` by pushing effects onto `out`. [`dispatch`] checks each
     /// one against [`FeatureInfo::emits`] before [`Domain::perform`] runs it.
     ///
+    /// A feature decides, it does not act: `world` is read-only here so that
+    /// [`FeatureInfo::emits`] is the whole truth about what this feature can
+    /// do, which is what the tables and diagrams are drawn from.
+    ///
     /// - `ev`: the event to react to.
     /// - `world`: the outside world, read-only.
     /// - `out`: effects to append, in the order they should run.
     fn handle(&mut self, ev: &D::Event, world: &D::Env, out: &mut Vec<D::Action>);
 }
 
-/// Runs `f` on `ev` if `f` declared this event's kind, then debug-checks that
-/// it only emitted actions it declared.
+/// Runs `f` on `ev` if `f` declared this event's kind, checks that it only
+/// emitted actions it declared, then carries those actions out.
 ///
 /// - `f`: the feature to run.
 /// - `ev`: the event to dispatch.
-/// - `world`: the outside world, read-only.
-/// - `out`: effects `f` emits are appended here.
-pub fn dispatch<D, F>(f: &mut F, ev: &D::Event, world: &D::Env, out: &mut Vec<D::Action>)
+/// - `world`: the outside world, read by `f` and mutated by its actions.
+///
+/// The action list is this function's own, so a feature's effects land in
+/// `world` before the next feature is dispatched. Two features that declare the
+/// same kind in [`FeatureInfo::handles`] therefore see each other, in the order
+/// the caller dispatches them.
+///
+/// # Panics
+///
+/// In debug builds, panics if `f` emitted an action outside
+/// [`FeatureInfo::emits`] — before any of them runs.
+pub fn dispatch<D, F>(f: &mut F, ev: &D::Event, world: &mut D::Env)
 where
     D: Domain,
     D::Action: PartialEq,
@@ -47,15 +60,20 @@ where
         return;
     }
 
-    let first = out.len();
-    f.handle(ev, world, out);
+    // Unallocated until the handler pushes, which the gate above already ruled
+    // out for most events.
+    let mut out = Vec::new();
+    f.handle(ev, &*world, &mut out);
 
     debug_assert!(
-        out[first..].iter().all(|a| F::INFO.emits.contains(a)),
-        "{}: emitted an action it does not declare -> {:?}",
+        out.iter().all(|a| F::INFO.emits.contains(a)),
+        "{}: emitted an action it does not declare -> {out:?}",
         F::INFO.name,
-        &out[first..],
     );
+
+    for a in out {
+        D::perform(a, ev, world);
+    }
 }
 
 /// Event kinds nothing in the controller accounts for.

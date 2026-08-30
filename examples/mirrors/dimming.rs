@@ -21,6 +21,7 @@ impl Feature<Mirrors> for Dimming {
             Event::GearChanged(rev) => (world.power_on, *rev),
             _ => return,
         };
+
         out.push(if power && !gear {
             Action::DimmingOn
         } else {

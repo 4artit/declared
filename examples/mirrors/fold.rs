@@ -8,7 +8,7 @@ use chart::machine::{Cond, Edge, Goto, Ignore, Machine, OnUnknown, Source, State
 use chart::verify::Coverage;
 use chart::{MachineSpec, render, verify};
 
-use crate::{Event, Kind, Mirrors, StateAction, World};
+use crate::{Kind, Mirrors, StateAction};
 
 chart::tags! {
     pub enum FoldTag {
@@ -24,7 +24,15 @@ pub struct FoldSm;
 impl MachineSpec for FoldSm {
     type Domain = Mirrors;
     type Tag = FoldTag;
+
+    const STATES: &'static [State<FoldSm>] = STATES;
+    const EDGES: &'static [Edge<FoldSm>] = EDGES;
+    const IGNORES: &'static [Ignore<FoldSm>] = IGNORES;
 }
+
+/// The state the mirror is already in when the controller starts. Not a const on
+/// the spec: a machine resumes, so this has to stay a runtime choice.
+pub const INITIAL: FoldTag = FoldTag::Unfolded;
 
 // ─────────────────────────────────────────── guards
 // Declared against the domain, so a second machine could reuse them.
@@ -144,29 +152,17 @@ static IGNORES: &[Ignore<FoldSm>] = &[
     },
 ];
 
-// ─────────────────────────────────────────── feature
+// ─────────────────────────────────────────── machine
 
-pub struct Fold(Machine<FoldSm>);
-
-impl Default for Fold {
-    fn default() -> Self {
-        Self(Machine::new(FoldTag::Unfolded, STATES, EDGES, IGNORES))
-    }
-}
-
-impl Fold {
-    pub fn dispatch(
-        &mut self,
-        ev: &Event,
-        world: &mut World,
-    ) -> Option<chart::machine::Taken<FoldSm>> {
-        self.0.dispatch(ev, world)
-    }
+/// The controller holds a [`Machine`] directly: with the table on the spec there
+/// is nothing left for a wrapper type to carry.
+pub fn machine() -> Machine<FoldSm> {
+    Machine::new(INITIAL)
 }
 
 /// Drawn from the tables alone; no machine instance needed.
 pub fn diagram() -> String {
-    render::to_mermaid::<FoldSm>(FoldTag::Unfolded, EDGES, STATES)
+    render::to_mermaid::<FoldSm>(INITIAL, EDGES, STATES)
 }
 
 /// The kinds this machine acts on, for the controller-wide check.
@@ -175,5 +171,5 @@ pub fn handled_kinds() -> Vec<Kind> {
 }
 
 pub fn coverage() -> Coverage {
-    verify::coverage::<FoldSm>(FoldTag::Unfolded, EDGES, IGNORES)
+    verify::coverage::<FoldSm>(INITIAL, EDGES, IGNORES)
 }

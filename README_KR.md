@@ -40,7 +40,7 @@ chart = { path = "../chart" }
 전등을 껐다 켰다 하는 2상태 예제:
 
 ```rust
-use chart::machine::{Edge, Goto, Ignore, Machine, OnUnknown, Source, State};
+use chart::machine::{self, Edge, Goto, Ignore, Machine, OnUnknown, Source, State};
 use chart::{Domain, MachineSpec};
 
 chart::tags! { enum Tag { Off, On } }
@@ -84,6 +84,10 @@ impl Domain for Light {
 impl MachineSpec for Light {
     type Domain = Light;
     type Tag = Tag;
+
+    const STATES: &'static [State<Light>] = STATES;
+    const EDGES: &'static [Edge<Light>] = EDGES;
+    const IGNORES: &'static [Ignore<Light>] = IGNORES;
 }
 
 static STATES: &[State<Light>] = &[
@@ -106,9 +110,9 @@ fn main() {
     let mut world = Env;
     // 상태 기계는 시작하는 게 아니라 재개한다. `Tag::Off`는 전등이 이미
     // 꺼져 있다는 뜻이므로 `Off`의 진입 동작은 여기서 실행되지 않는다.
-    let mut m = Machine::new(Tag::Off, STATES, EDGES, IGNORES);
-    m.dispatch(&Event::Toggle, &mut world); // -> click, on
-    m.dispatch(&Event::Toggle, &mut world); // -> click, off
+    let mut m = Machine::<Light>::new(Tag::Off);
+    machine::dispatch(&mut m, &Event::Toggle, &mut world); // -> click, on
+    machine::dispatch(&mut m, &Event::Toggle, &mut world); // -> click, off
 }
 ```
 
@@ -120,7 +124,7 @@ fn main() {
 
 ## 코드 대신 선언해서 얻는 것
 
-- **실행기.** `Machine::dispatch`(또는 `feature::dispatch`)가 작성한 표를
+- **실행기.** `machine::dispatch`(또는 `feature::dispatch`)가 작성한 표를
   그대로 읽는다 — 표와 어긋날 수 있는 별도의 해석 단계가 없다.
 - **다이어그램.** `render::to_mermaid`가 전이 표를 `stateDiagram-v2`로
   뽑아내고, `scripts/mermaid_to_plantuml.sh`로 PlantUML로도 바꿀 수 있다.
@@ -144,7 +148,7 @@ fn main() {
 src/
   lib.rs          // Domain, MachineSpec — 라이브러리 진입점
   feature.rs      // 상태 없는 층: Feature, FeatureInfo, dispatch
-  machine.rs      // 상태 있는 층: Machine, Taken
+  machine.rs      // 상태 있는 층: Machine, dispatch, Taken
   machine/        // Cond, CondNode, State, Edge, Source, Goto, OnUnknown
   render.rs       // to_mermaid, coverage, io_table, io_flowchart
 examples/

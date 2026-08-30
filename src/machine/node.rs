@@ -39,7 +39,7 @@ impl<'a, D: Domain> Cx<'a, D> {
     }
 }
 
-/// Guard evaluation cache, valid for one [`crate::machine::Machine::dispatch`]
+/// Guard evaluation cache, valid for one [`crate::machine::dispatch`]
 /// call, so a node shared by several edges is evaluated only once per event.
 #[derive(Default)]
 pub struct Memo {
