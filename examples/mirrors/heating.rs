@@ -32,6 +32,7 @@ impl Feature for Heating {
 
     const RULES: &'static [Rule<Mirrors, Action>] = &[
         Rule {
+            id: "HEAT_ON",
             when: &[Kind::DefogChanged],
             check: chart::check!(DefogOn),
             unknown: OnUnknown::Deny,
@@ -40,6 +41,7 @@ impl Feature for Heating {
         // No guard: the fallback line, reached only when the one above did not
         // match.
         Rule {
+            id: "HEAT_OFF",
             when: &[Kind::DefogChanged],
             check: chart::check!(),
             unknown: OnUnknown::Deny,

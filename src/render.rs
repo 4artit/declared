@@ -153,7 +153,8 @@ pub fn io_table<D: Domain>(features: &[&dyn AnyFeature<D>]) -> String {
 /// Returns a markdown table. Row order is declaration order, which is also
 /// priority — the first matching rule of a feature is the one that runs.
 pub fn rule_table<D: Domain>(features: &[&dyn AnyFeature<D>]) -> String {
-    let mut s = String::from("| feature | when | guard | emits |\n|---|---|---|---|\n");
+    let mut s =
+        String::from("| feature | rule | when | guard | emits |\n|---|---|---|---|---|\n");
     for f in features {
         let rows = f.rows();
         for (i, r) in rows.iter().enumerate() {
@@ -164,8 +165,9 @@ pub fn rule_table<D: Domain>(features: &[&dyn AnyFeature<D>]) -> String {
             };
             let _ = writeln!(
                 s,
-                "| `{}` | {} | {}{unknown} | {} |",
+                "| `{}` | `{}` | {} | {}{unknown} | {} |",
                 f.name(),
+                r.id,
                 join_or_dash(r.when),
                 guard_cell(&rows, i),
                 join_names(&r.emit),

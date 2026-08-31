@@ -147,7 +147,8 @@ Bigger examples:
   hiding inside a guard function.
 - **Traceable side effects.** A `perform` is the only place the outside world is
   touched, so every effect a dispatch produced is a plain value you can log or
-  assert on.
+  assert on. Every row carries an id — `Edge::id`, `Rule::id` — and both
+  layers' `dispatch` hands back the one that ran.
 - **Effects belong to whoever emits them.** Each feature and each machine names
   its own action type — `Feature::Action`, `MachineSpec::Action` — so every
   `perform` is exhaustive over exactly the effects its own file declares. Adding

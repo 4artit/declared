@@ -1130,12 +1130,14 @@ impl Feature for Camera {
 
     const RULES: &'static [Rule<RearCam, CamAction>] = &[
         Rule {
+            id: "CAMERA_1",
             when: &[Kind::GearChanged],
             check: crate::check!(GearIsReverse),
             unknown: OnUnknown::Deny,
             emit: &[CamAction::ShowCamera],
         },
         Rule {
+            id: "CAMERA_2",
             when: &[Kind::GearChanged],
             check: crate::check!(),
             unknown: OnUnknown::Deny,
@@ -1173,6 +1175,7 @@ impl Feature for Overlay {
     const NAME: &'static str = "Overlay";
 
     const RULES: &'static [Rule<RearCam, OverlayAction>] = &[Rule {
+        id: "OVERLAY_1",
         when: &[Kind::SpeedChanged],
         check: crate::check!(SpeedBelowLimit),
         unknown: OnUnknown::Deny,
@@ -1257,6 +1260,7 @@ impl Feature for Optimist {
     const NAME: &'static str = "Optimist";
 
     const RULES: &'static [Rule<RearCam, OverlayAction>] = &[Rule {
+        id: "OPTIMIST_1",
         when: &[Kind::SpeedChanged],
         check: crate::check!(SpeedBelowLimit),
         unknown: OnUnknown::Allow,
@@ -1289,12 +1293,14 @@ impl Feature for Shared {
 
     const RULES: &'static [Rule<RearCam, CamAction>] = &[
         Rule {
+            id: "SHARED_1",
             when: &[Kind::SpeedChanged],
             check: crate::check!(SpeedBelowLimit && GearIsReverse),
             unknown: OnUnknown::Deny,
             emit: &[CamAction::ShowCamera],
         },
         Rule {
+            id: "SHARED_2",
             when: &[Kind::SpeedChanged],
             check: crate::check!(SpeedBelowLimit),
             unknown: OnUnknown::Deny,
@@ -1334,12 +1340,14 @@ impl Feature for Noisy {
 
     const RULES: &'static [Rule<RearCam, CamAction>] = &[
         Rule {
+            id: "NOISY_1",
             when: &[Kind::SpeedChanged, Kind::GearChanged],
             check: crate::check!(GearIsReverse),
             unknown: OnUnknown::Deny,
             emit: &[CamAction::ShowCamera, CamAction::ShowCamera],
         },
         Rule {
+            id: "NOISY_2",
             when: &[Kind::GearChanged, Kind::PowerChanged],
             check: crate::check!(),
             unknown: OnUnknown::Deny,
@@ -1410,11 +1418,11 @@ fn rule_table_shows_the_guard_of_each_rule() {
     let table = render::rule_table(CAMERA_FEATURES);
 
     assert!(
-        table.contains("| `Camera` | `GearChanged` | `GearIsReverse` | `ShowCamera` |"),
+        table.contains("| `Camera` | `CAMERA_1` | `GearChanged` | `GearIsReverse` | `ShowCamera` |"),
         "{table}"
     );
     assert!(
-        table.contains("| `Overlay` | `SpeedChanged` | `SpeedBelowLimit` | `UpdateOverlay` |"),
+        table.contains("| `Overlay` | `OVERLAY_1` | `SpeedChanged` | `SpeedBelowLimit` | `UpdateOverlay` |"),
         "{table}"
     );
 }
@@ -1426,7 +1434,7 @@ fn rule_table_calls_a_covered_unguarded_rule_else() {
     let table = render::rule_table(&[&Camera]);
 
     assert!(
-        table.contains("| `Camera` | `GearChanged` | else | `HideCamera` |"),
+        table.contains("| `Camera` | `CAMERA_2` | `GearChanged` | else | `HideCamera` |"),
         "{table}"
     );
 }
@@ -1441,6 +1449,7 @@ impl Feature for Always {
     const NAME: &'static str = "Always";
 
     const RULES: &'static [Rule<RearCam, OverlayAction>] = &[Rule {
+        id: "ALWAYS_1",
         when: &[Kind::PowerChanged],
         check: crate::check!(),
         unknown: OnUnknown::Deny,
@@ -1457,7 +1466,7 @@ fn rule_table_dashes_a_rule_nothing_precedes() {
     let table = render::rule_table(&[&Always]);
 
     assert!(
-        table.contains("| `Always` | `PowerChanged` | — | `UpdateOverlay` |"),
+        table.contains("| `Always` | `ALWAYS_1` | `PowerChanged` | — | `UpdateOverlay` |"),
         "{table}"
     );
 }
@@ -1597,12 +1606,14 @@ impl Feature for Colliding {
 
     const RULES: &'static [Rule<RearCam, OverlayAction>] = &[
         Rule {
+            id: "COLLIDING_1",
             when: &[Kind::SpeedChanged],
             check: crate::check!(SpeedBelowLimit),
             unknown: OnUnknown::Deny,
             emit: &[OverlayAction::UpdateOverlay],
         },
         Rule {
+            id: "COLLIDING_2",
             when: &[Kind::SpeedChanged],
             check: crate::check!(Other),
             unknown: OnUnknown::Deny,
@@ -1666,6 +1677,7 @@ impl Feature for Colliding2 {
     const NAME: &'static str = "Colliding2";
 
     const RULES: &'static [Rule<RearCam, OverlayAction>] = &[Rule {
+        id: "COLLIDING2_1",
         when: &[Kind::SpeedChanged],
         check: crate::check!(Other),
         unknown: OnUnknown::Deny,
@@ -1711,4 +1723,73 @@ fn a_shared_name_makes_the_second_node_inherit_the_first_answer() {
     );
     // One lookup, not two: the second node's `eval` was never reached.
     assert_eq!(w.speed_lookups.get(), 1);
+}
+
+// ─────────────────────────────────────────── dispatch reports what ran
+
+/// The feature layer's answer to `Taken::edge`: the id of the rule that ran.
+/// Only the id, since this arrives through `&dyn AnyFeature`.
+#[test]
+fn feature_dispatch_returns_the_rule_that_ran() {
+    let mut w = Env::default();
+
+    assert_eq!(
+        Camera.dispatch(&Event::GearChanged(Gear::Reverse), &mut w),
+        Some("CAMERA_1")
+    );
+    // The fallback below it, when the guard above does not hold.
+    assert_eq!(
+        Camera.dispatch(&Event::GearChanged(Gear::Drive), &mut w),
+        Some("CAMERA_2")
+    );
+    // A kind no rule is considered for.
+    assert_eq!(Camera.dispatch(&Event::PowerChanged, &mut w), None);
+}
+
+/// The id names one rule across the controller, because `dispatch` hands it
+/// back with no feature attached.
+#[test]
+fn duplicate_rule_ids_reports_a_repeat_across_features() {
+    assert!(verify::duplicate_rule_ids(CAMERA_FEATURES).is_empty());
+
+    // `Camera` and `Twin` both declare `CAMERA_1`.
+    struct Twin;
+    impl Feature for Twin {
+        type Domain = RearCam;
+        type Action = CamAction;
+        const NAME: &'static str = "Twin";
+        const RULES: &'static [Rule<RearCam, CamAction>] = &[Rule {
+            id: "CAMERA_1",
+            when: &[Kind::PowerChanged],
+            check: crate::check!(),
+            unknown: OnUnknown::Deny,
+            emit: &[CamAction::ShowCamera],
+        }];
+        fn perform(action: CamAction, ev: &Event, world: &mut Env) {
+            Camera::perform(action, ev, world);
+        }
+    }
+
+    assert_eq!(
+        verify::duplicate_rule_ids(&[&Camera, &Twin]),
+        vec!["CAMERA_1"]
+    );
+}
+
+/// A guard saying no is not a gap in the table, so it does not reach the
+/// `NoRow` branch. `Off` has a `GearChanged` edge; its guard just fails here.
+#[test]
+fn a_declining_guard_is_not_a_missing_row() {
+    let mut m = off();
+    let mut w = Env::default();
+
+    // Drive, so `GearIsReverse` is false and `CAM_ON` declines.
+    assert!(machine::dispatch(&mut m, &Event::GearChanged(Gear::Drive), &mut w).is_none());
+    assert_eq!(m.tag(), Tag::Off);
+    // Rows do cover the combination, which is what separates this from a hole.
+    assert!(
+        verify::coverage::<RearCam>(Tag::Off, EDGES, IGNORES)
+            .holes
+            .is_empty()
+    );
 }

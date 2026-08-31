@@ -173,14 +173,18 @@ pub trait MachineSpec: Sized + 'static {
     /// - `ev`: the event being dispatched, for actions that need a runtime
     ///   value from its payload.
     /// - `world`: the outside world to mutate.
-    fn perform(action: ActionOf<Self>, ev: &EventOf<Self>, world: &mut EnvOf<Self>);
+    fn perform(
+        action: ActionOf<Self>,
+        ev: &EventOf<Self::Domain>,
+        world: &mut EnvOf<Self::Domain>,
+    );
 
     /// Carries out one entry or exit effect. No event: see
     /// [`MachineSpec::StateAction`].
     ///
     /// - `action`: the effect to carry out.
     /// - `world`: the outside world to mutate.
-    fn perform_state(action: Self::StateAction, world: &mut EnvOf<Self>);
+    fn perform_state(action: Self::StateAction, world: &mut EnvOf<Self::Domain>);
 
     /// The states [`verify::coverage`] walks. Defaults to [`Enumerable::ALL`];
     /// override only to check a subset. It scopes the check alone — dispatch
@@ -190,15 +194,20 @@ pub trait MachineSpec: Sized + 'static {
     }
 }
 
-/// The event type of `M`'s domain.
-pub type EventOf<M> = <<M as MachineSpec>::Domain as Domain>::Event;
-/// The event kind type of `M`'s domain.
-pub type KindOf<M> = <<M as MachineSpec>::Domain as Domain>::EventKind;
-/// The action type of `M`. Like [`StateActionOf`] this is `M`'s own: effects
-/// belong to whoever emits them.
+// The aliases split by which level names the type. Both layers project through
+// a `Domain` for the first three, so both spell them the same way; the last two
+// exist only on a machine.
+
+/// The event type of domain `D`.
+pub type EventOf<D> = <D as Domain>::Event;
+/// The event kind type of domain `D`.
+pub type KindOf<D> = <D as Domain>::EventKind;
+/// The world type of domain `D`.
+pub type EnvOf<D> = <D as Domain>::Env;
+
+/// The action type of machine `M`. Its own, not its domain's: effects belong to
+/// whoever emits them, and a feature names [`feature::Feature::Action`] instead.
 pub type ActionOf<M> = <M as MachineSpec>::Action;
-/// The state action type of `M`. Unlike the others this is `M`'s own, not its
-/// domain's: states belong to the machine.
+/// The state action type of machine `M`. Its own as well, because only a machine
+/// has states.
 pub type StateActionOf<M> = <M as MachineSpec>::StateAction;
-/// The world type of `M`'s domain.
-pub type EnvOf<M> = <<M as MachineSpec>::Domain as Domain>::Env;

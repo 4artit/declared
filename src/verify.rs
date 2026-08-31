@@ -194,6 +194,33 @@ pub fn duplicate_node_names<D: Domain>(
     names_shared_by_two_types(ids)
 }
 
+/// Rule ids carried by more than one rule across a whole controller.
+///
+/// [`crate::feature::AnyFeature::dispatch`] returns an id with no feature name
+/// attached, so a repeat would name two different rules. The machine-side
+/// counterpart is [`Coverage::duplicate_edge_ids`].
+///
+/// - `features`: the controller's feature list.
+///
+/// Returns the offending ids, sorted and without repeats. **Must be empty in
+/// CI.**
+pub fn duplicate_rule_ids<D: Domain>(features: &[&dyn AnyFeature<D>]) -> Vec<&'static str> {
+    let mut ids: Vec<&'static str> = features
+        .iter()
+        .flat_map(|f| f.rows())
+        .map(|r| r.id)
+        .collect();
+    ids.sort_unstable();
+
+    let mut out: Vec<&'static str> = Vec::new();
+    for w in ids.windows(2) {
+        if w[0] == w[1] && !out.contains(&w[0]) {
+            out.push(w[0]);
+        }
+    }
+    out
+}
+
 /// The event kinds a transition table acts on. `Ignore`d kinds do not count —
 /// pass this to [`unhandled_kinds`] alongside a feature list so
 /// a controller mixing both layers is checked as one unit.

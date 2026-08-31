@@ -143,6 +143,8 @@ fn main() {
   드러난다.
 - **추적 가능한 부수효과.** 바깥 세상은 `perform`에서만 바뀐다. 그래서 한 번의
   dispatch가 만든 모든 효과는 로그로 남기거나 검증할 수 있는 평범한 값이다.
+  모든 행은 id를 갖고(`Edge::id`, `Rule::id`), 양쪽 레이어의 `dispatch`가
+  실행된 행의 id를 돌려준다.
 - **효과의 주인은 그것을 낸 쪽이다.** 기능과 머신이 각자 액션 타입을 가지므로
   (`Feature::Action`, `MachineSpec::Action`) 모든 `perform`은 자기 파일이
   선언한 효과에 대해 정확히 exhaustive하다. 액션을 추가하면 그 파일에서만

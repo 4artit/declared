@@ -17,7 +17,7 @@
 use std::any::TypeId;
 
 use crate::guard::{Cx, Expr, Memo, OnUnknown};
-use crate::{Domain, HasKind};
+use crate::{Domain, EnvOf, EventOf, HasKind, KindOf};
 
 /// One rule of a feature: when it is considered, what must hold, and what it
 /// emits.
@@ -28,8 +28,15 @@ use crate::{Domain, HasKind};
 ///
 /// `A` is the declaring feature's own action type, not a controller-wide one.
 pub struct Rule<D: Domain, A: 'static> {
+    /// Stable identifier, for requirement tracing and golden diffs, like
+    /// [`crate::machine::Edge::id`]. It must survive reordering of the table.
+    ///
+    /// Unique across the whole controller, not just this feature:
+    /// [`AnyFeature::dispatch`] returns it with no feature name attached, so a
+    /// repeat would be ambiguous. [`crate::verify::duplicate_rule_ids`] checks it.
+    pub id: &'static str,
     /// Event kinds this rule is considered for.
-    pub when: &'static [D::EventKind],
+    pub when: &'static [KindOf<D>],
     /// The condition, over the event and the world.
     pub check: &'static Expr<D>,
     /// What to do when `check` is undecidable.
@@ -70,8 +77,8 @@ pub trait Feature: Sync + 'static {
     /// - `world`: the outside world to mutate.
     fn perform(
         action: Self::Action,
-        ev: &<Self::Domain as Domain>::Event,
-        world: &mut <Self::Domain as Domain>::Env,
+        ev: &EventOf<Self::Domain>,
+        world: &mut EnvOf<Self::Domain>,
     );
 }
 
@@ -80,8 +87,10 @@ pub trait Feature: Sync + 'static {
 /// Actions reach it as text: they are the one part of a feature the rest of the
 /// controller has no type for.
 pub struct RuleRow<D: Domain> {
+    /// The rule's [`Rule::id`].
+    pub id: &'static str,
     /// The kinds this rule is considered for.
-    pub when: &'static [D::EventKind],
+    pub when: &'static [KindOf<D>],
     /// The guard, rendered by [`Expr::render`]. Empty for an unguarded rule.
     pub guard: String,
     /// What the rule does when its guard is undecidable.
@@ -103,7 +112,7 @@ pub trait AnyFeature<D: Domain>: Sync {
     /// The event kinds some rule is considered for, without repeats, in
     /// [`Domain::all_kinds`] order rather than the order the rules happen to
     /// list them.
-    fn handles(&self) -> Vec<D::EventKind>;
+    fn handles(&self) -> Vec<KindOf<D>>;
 
     /// The actions some rule may emit, in declaration order, without repeats.
     fn emits(&self) -> Vec<String>;
@@ -122,6 +131,11 @@ pub trait AnyFeature<D: Domain>: Sync {
 
     /// Takes the first rule that matches `ev` and carries out its actions.
     ///
+    /// Returns the [`Rule::id`] of the rule that ran, or `None` if none
+    /// matched. The id alone, rather than a machine-side [`crate::machine::Taken`]:
+    /// this is reached through `&dyn AnyFeature`, which has no `F::Action` left
+    /// to hand back.
+    ///
     /// - `ev`: the event to dispatch.
     /// - `world`: the outside world, read by the guards and mutated by the
     ///   actions.
@@ -137,7 +151,7 @@ pub trait AnyFeature<D: Domain>: Sync {
     /// Actions run before this returns, so a feature's effects land in `world`
     /// before the next feature is dispatched. Two features whose rules cover the
     /// same kind therefore see each other, in the order the caller walks them.
-    fn dispatch(&self, ev: &D::Event, world: &mut D::Env);
+    fn dispatch(&self, ev: &EventOf<D>, world: &mut EnvOf<D>) -> Option<&'static str>;
 }
 
 impl<F: Feature> AnyFeature<F::Domain> for F {
@@ -145,7 +159,7 @@ impl<F: Feature> AnyFeature<F::Domain> for F {
         F::NAME
     }
 
-    fn handles(&self) -> Vec<<F::Domain as Domain>::EventKind> {
+    fn handles(&self) -> Vec<KindOf<F::Domain>> {
         <F::Domain as Domain>::all_kinds()
             .iter()
             .copied()
@@ -168,6 +182,7 @@ impl<F: Feature> AnyFeature<F::Domain> for F {
         F::RULES
             .iter()
             .map(|r| RuleRow {
+                id: r.id,
                 when: r.when,
                 guard: r.check.render(),
                 unknown: r.unknown,
@@ -184,9 +199,9 @@ impl<F: Feature> AnyFeature<F::Domain> for F {
 
     fn dispatch(
         &self,
-        ev: &<F::Domain as Domain>::Event,
-        world: &mut <F::Domain as Domain>::Env,
-    ) {
+        ev: &EventOf<F::Domain>,
+        world: &mut EnvOf<F::Domain>,
+    ) -> Option<&'static str> {
         let kind = ev.kind();
 
         // The borrow of `world` ends with `cx`, before the actions mutate it.
@@ -198,13 +213,13 @@ impl<F: Feature> AnyFeature<F::Domain> for F {
                 .position(|r| r.when.contains(&kind) && r.unknown.accepts(r.check.eval(&cx)))
         };
 
-        let Some(hit) = hit else { return };
-        let rule = &F::RULES[hit];
+        let rule = &F::RULES[hit?];
 
         for &a in rule.emit {
             F::perform(a, ev, world);
         }
 
-        log::debug!("[chart] {}: {ev:?} -> {:?}", F::NAME, rule.emit);
+        log::debug!("[chart] {}: {ev:?} -> {:?}", rule.id, rule.emit);
+        Some(rule.id)
     }
 }

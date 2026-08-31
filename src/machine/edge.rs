@@ -51,7 +51,7 @@ pub struct Edge<M: MachineSpec> {
     /// survive reordering of the table.
     pub id: &'static str,
     pub from: Source<M>,
-    pub when: KindOf<M>,
+    pub when: KindOf<M::Domain>,
     pub check: &'static Expr<M::Domain>,
     pub unknown: OnUnknown,
     /// Actions this transition emits, in declaration order. Named like
@@ -73,14 +73,14 @@ pub struct Ignore<M: MachineSpec> {
     /// The kinds this covers. A list, unlike [`Edge::when`]: an edge is singular
     /// because its [`Edge::id`] names one transition, while one `why` justifies
     /// as many combinations as it applies to.
-    pub when: &'static [KindOf<M>],
+    pub when: &'static [KindOf<M::Domain>],
     /// Why this combination is intentionally unhandled.
     pub why: &'static str,
 }
 
 impl<M: MachineSpec> Ignore<M> {
     /// Reports whether this `Ignore` covers `(tag, kind)`.
-    pub fn matches(&self, tag: M::Tag, kind: KindOf<M>) -> bool {
+    pub fn matches(&self, tag: M::Tag, kind: KindOf<M::Domain>) -> bool {
         self.from.matches(tag) && self.when.contains(&kind)
     }
 }

@@ -20,12 +20,12 @@ One line per `input -> output` rule. Within a feature the order is priority: the
 first rule whose guard holds is the one that runs, so a rule with no guard is a
 fallback.
 
-| feature | when | guard | emits |
-|---|---|---|---|
-| `Heating` | `DefogChanged` | `DefogOn` | `On` |
-| `Heating` | `DefogChanged` | else | `Off` |
-| `Dimming` | `PowerChanged`, `GearChanged` | `PowerOn && !GearReverse` | `On` |
-| `Dimming` | `PowerChanged`, `GearChanged` | else | `Off` |
+| feature | rule | when | guard | emits |
+|---|---|---|---|---|
+| `Heating` | `HEAT_ON` | `DefogChanged` | `DefogOn` | `On` |
+| `Heating` | `HEAT_OFF` | `DefogChanged` | else | `Off` |
+| `Dimming` | `DIM_ON` | `PowerChanged`, `GearChanged` | `PowerOn && !GearReverse` | `On` |
+| `Dimming` | `DIM_OFF` | `PowerChanged`, `GearChanged` | else | `Off` |
 
 ## Events, features and actions
 
@@ -64,3 +64,4 @@ stateDiagram-v2
 | Holes in the fold table | [] |
 | Fold table is clean | true |
 | Guard names used by two node types | [] |
+| Rule ids used twice | [] |

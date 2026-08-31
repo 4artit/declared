@@ -36,12 +36,14 @@ impl Feature for Dimming {
 
     const RULES: &'static [Rule<Mirrors, Action>] = &[
         Rule {
+            id: "DIM_ON",
             when: INPUTS,
             check: chart::check!(PowerOn && !GearReverse),
             unknown: OnUnknown::Deny,
             emit: &[Action::On],
         },
         Rule {
+            id: "DIM_OFF",
             when: INPUTS,
             check: chart::check!(),
             unknown: OnUnknown::Deny,

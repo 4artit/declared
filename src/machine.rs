@@ -57,6 +57,18 @@ where
     }
 }
 
+/// What matching an event against the table produced. Private: it exists to
+/// keep `dispatch`'s two "nothing happened" cases apart, which callers see as
+/// the difference between a `warn` and a `debug` line.
+enum Selected {
+    /// Take the edge at this index.
+    Take(usize),
+    /// Rows cover this combination, but every guard declined. Ordinary.
+    Declined,
+    /// No row covers this combination at all.
+    NoRow,
+}
+
 /// The current state of one machine. The table it runs is
 /// [`MachineSpec::EDGES`], so this holds nothing but the tag.
 pub struct Machine<M: MachineSpec> {
@@ -127,26 +139,61 @@ impl<M: MachineSpec> Machine<M> {
         )
     }
 
-    /// Index of the first edge matching `kind` from the current state.
-    /// Declaration order is priority.
-    fn select(&self, ev: &EventOf<M>, world: &EnvOf<M>, kind: KindOf<M>) -> Option<usize> {
+    /// Matches `kind` against the table from the current state. Declaration
+    /// order is priority.
+    ///
+    /// Separating [`Selected::Declined`] from [`Selected::NoRow`] is what lets
+    /// `dispatch` tell a gap in the table from a guard doing its job: the first
+    /// is a defect, the second is the ordinary way a guarded row is skipped.
+    fn select(
+        &self,
+        ev: &EventOf<M::Domain>,
+        world: &EnvOf<M::Domain>,
+        kind: KindOf<M::Domain>,
+    ) -> Selected {
         let memo = Memo::new();
         let cx = Cx::new(ev, world, &memo);
 
-        M::EDGES.iter().position(|e| {
-            e.when == kind && e.from.matches(self.tag) && e.unknown.accepts(e.check.eval(&cx))
-        })
+        // One `Memo` across the whole scan, so a node shared by several rows is
+        // evaluated once per dispatch.
+        let mut saw_row = false;
+        for (i, e) in M::EDGES.iter().enumerate() {
+            if e.when != kind || !e.from.matches(self.tag) {
+                continue;
+            }
+            saw_row = true;
+            if e.unknown.accepts(e.check.eval(&cx)) {
+                return Selected::Take(i);
+            }
+        }
+
+        if saw_row {
+            Selected::Declined
+        } else {
+            Selected::NoRow
+        }
+    }
+
+    /// The ids of the rows covering `kind` from the current state, guards not
+    /// consulted. Only for the [`Selected::Declined`] log line, which builds it
+    /// solely when debug logging is on.
+    fn rows_for(&self, kind: KindOf<M::Domain>) -> Vec<&'static str> {
+        M::EDGES
+            .iter()
+            .filter(|e| e.when == kind && e.from.matches(self.tag))
+            .map(|e| e.id)
+            .collect()
     }
 
     /// Runs each of an edge's actions in order.
-    fn perform_all(to_run: &[ActionOf<M>], ev: &EventOf<M>, world: &mut EnvOf<M>) {
+    fn perform_all(to_run: &[ActionOf<M>], ev: &EventOf<M::Domain>, world: &mut EnvOf<M::Domain>) {
         for &a in to_run {
             M::perform(a, ev, world);
         }
     }
 
     /// Runs each of a state's entry or exit actions in order.
-    fn perform_state_all(to_run: &[StateActionOf<M>], world: &mut EnvOf<M>) {
+    fn perform_state_all(to_run: &[StateActionOf<M>], world: &mut EnvOf<M::Domain>) {
         for &a in to_run {
             M::perform_state(a, world);
         }
@@ -175,19 +222,33 @@ impl<M: MachineSpec> Machine<M> {
 /// won't compile. Queue follow-up events in the caller instead — see [`Taken`].
 pub fn dispatch<M: MachineSpec>(
     m: &mut Machine<M>,
-    ev: &EventOf<M>,
-    world: &mut EnvOf<M>,
+    ev: &EventOf<M::Domain>,
+    world: &mut EnvOf<M::Domain>,
 ) -> Option<Taken<M>> {
     let kind = ev.kind();
 
-    let Some(hit) = m.select(ev, world, kind) else {
-        if !M::IGNORES.iter().any(|i| i.matches(m.tag, kind)) {
-            log::warn!(
-                "[chart] unhandled: {:?} x {ev:?} (no edge, no ignore)",
-                m.tag
+    let hit = match m.select(ev, world, kind) {
+        Selected::Take(hit) => hit,
+        // Every row said no. That is what a guard is for, so it is not a
+        // defect — but it is the usual reason an event "did nothing", so it is
+        // worth a line when tracing.
+        Selected::Declined => {
+            log::debug!(
+                "[chart] declined: {:?} x {ev:?} (every guard said no: {:?})",
+                m.tag,
+                m.rows_for(kind)
             );
+            return None;
         }
-        return None;
+        // A combination the table does not cover. `verify::coverage` reports
+        // this statically, so reaching it means the check never ran over this
+        // combination — a release build, or a narrowed `all_tags`/`all_kinds`.
+        Selected::NoRow => {
+            if !M::IGNORES.iter().any(|i| i.matches(m.tag, kind)) {
+                log::warn!("[chart] no row: {:?} x {ev:?} (no edge, no ignore)", m.tag);
+            }
+            return None;
+        }
     };
 
     let edge = &M::EDGES[hit];
