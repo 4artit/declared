@@ -1,5 +1,7 @@
 //! One row of the transition table.
 
+use alloc::vec::Vec;
+
 use crate::guard::{Expr, OnUnknown};
 use crate::{ActionOf, Enumerable, KindOf, MachineSpec};
 

@@ -3,7 +3,10 @@
 //! The [`crate::machine`] functions read a transition table; the
 //! [`crate::feature`] ones read a list of [`AnyFeature`].
 
-use std::fmt::Write as _;
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+use core::fmt::Write as _;
 
 use crate::feature::{AnyFeature, RuleRow};
 use crate::guard::OnUnknown;
@@ -120,7 +123,7 @@ pub fn ignore_table<M: MachineSpec>(ignores: &'static [Ignore<M>]) -> String {
     s
 }
 
-fn join_actions<A: std::fmt::Debug>(actions: &[A]) -> String {
+fn join_actions<A: core::fmt::Debug>(actions: &[A]) -> String {
     actions
         .iter()
         .map(|a| format!("{a:?}"))
@@ -234,7 +237,7 @@ fn guard_cell<D: Domain>(rows: &[RuleRow<D>], i: usize) -> String {
     }
 }
 
-fn join_or_dash<T: std::fmt::Debug>(items: &[T]) -> String {
+fn join_or_dash<T: core::fmt::Debug>(items: &[T]) -> String {
     if items.is_empty() {
         return "—".into();
     }

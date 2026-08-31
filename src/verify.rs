@@ -2,7 +2,11 @@
 //! transition table leaves out, the declarations it contradicts, and the guard
 //! names it reuses across either layer.
 
-use std::any::TypeId;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::any::TypeId;
 
 use crate::feature::{AnyFeature, Feature};
 use crate::machine::{Edge, Goto, Ignore};

@@ -1,6 +1,6 @@
 //! Declaring enums together with the exhaustive list of their values.
 
-use std::fmt::Debug;
+use core::fmt::Debug;
 
 /// A type whose values can all be listed at compile time.
 ///

@@ -38,6 +38,14 @@ crates.io에 배포되지 않는다. 로컬 경로 의존성으로 쓴다.
 chart = { path = "../chart" }
 ```
 
+이 크레이트는 `no_std`다. dispatch와 가드 판정, 그리고 그들이 읽는 표는 힙을
+쓰지 않는다. `alloc`은 컨트롤러를 *실행*하는 쪽이 아니라 *보고*하는 쪽 —
+`render`의 문서와 `verify`의 결과 — 에만 필요하다.
+
+```sh
+cargo build --lib --target thumbv7em-none-eabihf   # 베어메탈로 빌드된다
+```
+
 ## 빠른 시작
 
 전등을 껐다 켰다 하는 2상태 예제:
@@ -183,4 +191,9 @@ API 설명은 타입 자체에 문서로 달려 있다. `cargo doc --open`으로
 
 ```sh
 cargo test
+cargo run --example door_lock          # examples/door_lock/door_lock.md 검사
+cargo run --example mirrors            # examples/mirrors/mirrors.md 검사
 ```
+
+각 예제는 문서를 다시 만들어 커밋된 `.md`와 대조하고, 어긋나면 실패한다 —
+그 파일들이 `render`의 테스트다. 의도한 변경 뒤에는 `-- --write`로 재생성한다.

@@ -1,4 +1,9 @@
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+// The core is allocation-free: dispatch, guard evaluation and the tables it
+// reads touch no heap. `alloc` is for what reports on a controller rather than
+// runs it — `render`'s documents and `verify`'s findings. Under `cfg(test)` the
+// harness needs std, so `cargo build` is what holds this honest.
+#![cfg_attr(not(test), no_std)]
 //! A declarative controller framework.
 //!
 //! A controller declares what it reacts to and what it does about it as static
@@ -35,13 +40,16 @@
 //! | [`cond_node!`] | A [`guard::CondNode`] impl |
 //! | [`check!`] | A guard [`guard::Expr`] tree |
 
+extern crate alloc;
+
 mod enums;
 
 pub mod feature;
 pub mod guard;
 pub mod machine;
 // Builds diagrams and tables for documentation only: no release binary reaches
-// it, and the committed `.md` files verify its output instead.
+// it. The examples check their generated document against the committed `.md`
+// on every run, so those files are this module's tests.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub mod render;
 pub mod verify;
@@ -79,7 +87,7 @@ pub mod prelude {
     pub use crate::{Domain, Enumerable, HasKind, MachineSpec, NoAction};
 }
 
-use std::fmt::Debug;
+use core::fmt::Debug;
 
 /// What one controller's parts have in common: its events and its world. Every
 /// other item in this crate is generic over `D: Domain`.

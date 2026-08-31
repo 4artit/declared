@@ -6,6 +6,8 @@ mod state;
 pub use edge::{Edge, Goto, Ignore, Source};
 pub use state::State;
 
+use alloc::vec::Vec;
+
 use crate::guard::{Cx, Memo};
 use crate::{ActionOf, EnvOf, EventOf, HasKind, KindOf, MachineSpec, StateActionOf, verify};
 
@@ -25,8 +27,8 @@ pub struct Taken<M: MachineSpec> {
 }
 
 // Derives would bound `D` itself; these bound only what is actually used.
-impl<M: MachineSpec> std::fmt::Debug for Taken<M> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<M: MachineSpec> core::fmt::Debug for Taken<M> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Taken")
             .field("edge", &self.edge)
             .field("exit", &self.exit)

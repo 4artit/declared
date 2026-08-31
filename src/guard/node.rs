@@ -1,7 +1,11 @@
 //! Guard nodes and the guard expression tree.
 
-use std::any::Any;
-use std::cell::RefCell;
+use alloc::format;
+use alloc::borrow::ToOwned;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::any::Any;
+use core::cell::RefCell;
 
 use crate::Domain;
 
@@ -124,7 +128,7 @@ impl<D: Domain> Expr<D> {
     ///
     /// - `out`: pairs are appended here, for [`crate::verify::coverage`]'s
     ///   name-uniqueness check.
-    pub fn node_ids(&self, out: &mut Vec<(&'static str, std::any::TypeId)>) {
+    pub fn node_ids(&self, out: &mut Vec<(&'static str, core::any::TypeId)>) {
         match self {
             Self::Always => {}
             Self::Node(n) => out.push((n.name(), (*n).type_id())),

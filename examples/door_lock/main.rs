@@ -289,12 +289,31 @@ fn main() {
 
     let diagram = render::state_diagram::<Door>(INITIAL, EDGES, STATES);
     let md = format!("# Door lock FSM\n\n```mermaid\n{diagram}```\n");
-    std::fs::write("examples/door_lock/door_lock.md", &md)
-        .expect("failed to write examples/door_lock/door_lock.md");
-    println!("\nmermaid diagram written to examples/door_lock/door_lock.md");
+    golden(
+        "examples/door_lock/door_lock.md",
+        include_str!("door_lock.md"),
+        &md,
+    );
 
     // A defect fails the run rather than scrolling past in the output.
     let coverage = verify::coverage::<Door>(INITIAL, EDGES, IGNORES);
     assert!(coverage.is_clean(), "{coverage:?}");
     println!("coverage: clean");
+}
+
+/// The committed `.md` is the golden: a normal run checks the generated
+/// document against it and fails on drift, so the file cannot quietly stop
+/// matching the code. Regenerate after an intended change with
+/// `cargo run --example door_lock -- --write`.
+fn golden(path: &str, committed: &str, generated: &str) {
+    if std::env::args().any(|a| a == "--write") {
+        std::fs::write(path, generated).unwrap_or_else(|e| panic!("failed to write {path}: {e}"));
+        println!("\nwrote {path}");
+    } else {
+        assert_eq!(
+            generated, committed,
+            "\n{path} is stale. Re-run with --write to regenerate it.\n"
+        );
+        println!("\n{path} is up to date");
+    }
 }

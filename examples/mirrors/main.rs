@@ -128,9 +128,11 @@ fn main() {
         c.handle_event(ev, &mut w);
     }
 
-    let path = "examples/mirrors/mirrors.md";
-    std::fs::write(path, document()).expect("failed to write mirrors.md");
-    println!("\nwrote {path}");
+    golden(
+        "examples/mirrors/mirrors.md",
+        include_str!("mirrors.md"),
+        &document(),
+    );
 }
 
 /// The whole controller, drawn from its declarations.
@@ -229,5 +231,22 @@ fn apply_signal(ev: &Event, w: &mut World) {
         Event::SpeedChanged(v) => w.speed = *v,
         Event::FoldPositionChanged(p) => w.fold_position = *p,
         _ => {}
+    }
+}
+
+/// The committed `.md` is the golden: a normal run checks the generated
+/// document against it and fails on drift, so the file cannot quietly stop
+/// matching the code. Regenerate after an intended change with
+/// `cargo run --example mirrors -- --write`.
+fn golden(path: &str, committed: &str, generated: &str) {
+    if std::env::args().any(|a| a == "--write") {
+        std::fs::write(path, generated).unwrap_or_else(|e| panic!("failed to write {path}: {e}"));
+        println!("\nwrote {path}");
+    } else {
+        assert_eq!(
+            generated, committed,
+            "\n{path} is stale. Re-run with --write to regenerate it.\n"
+        );
+        println!("\n{path} is up to date");
     }
 }

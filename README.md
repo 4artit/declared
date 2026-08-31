@@ -41,6 +41,14 @@ Not published to crates.io — use it as a path dependency.
 chart = { path = "../chart" }
 ```
 
+The crate is `no_std`. Dispatch, guard evaluation and the tables they read
+allocate nothing; `alloc` is needed only by what reports on a controller rather
+than runs it — `render`'s documents and `verify`'s findings.
+
+```sh
+cargo build --lib --target thumbv7em-none-eabihf   # builds bare-metal
+```
+
 ## Quick start
 
 A two-state light switch:
@@ -190,4 +198,10 @@ dispatch order, etc.) are documented on the types themselves — run
 
 ```sh
 cargo test
+cargo run --example door_lock          # checks examples/door_lock/door_lock.md
+cargo run --example mirrors            # checks examples/mirrors/mirrors.md
 ```
+
+Each example regenerates its document and compares it with the committed
+`.md`, failing on drift — those files are `render`'s tests. After an intended
+change, pass `-- --write` to regenerate.

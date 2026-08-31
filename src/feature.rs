@@ -14,7 +14,10 @@
 //! is exhaustive over exactly the effects it declares. [`AnyFeature`] is the one
 //! uniform face a controller needs to walk them all despite that.
 
-use std::any::TypeId;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::any::TypeId;
 
 use crate::guard::{Cx, Expr, Memo, OnUnknown};
 use crate::{Domain, EnvOf, EventOf, HasKind, KindOf};
@@ -60,7 +63,7 @@ pub trait Feature: Sync + 'static {
     /// exhaustive over them and adding one is a compile error here and nowhere
     /// else. Bounded exactly like [`crate::MachineSpec::Action`];
     /// [`crate::verify::unemitted_actions`] asks for the rest where it needs it.
-    type Action: Copy + std::fmt::Debug + 'static;
+    type Action: Copy + core::fmt::Debug + 'static;
 
     /// Display name, used in tables and diagrams.
     const NAME: &'static str;
