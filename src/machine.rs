@@ -9,7 +9,7 @@ pub use state::State;
 use alloc::vec::Vec;
 
 use crate::guard::{Cx, Memo};
-use crate::{ActionOf, EnvOf, EventOf, HasKind, KindOf, MachineSpec, StateActionOf, verify};
+use crate::{ActionOf, EnvOf, EventOf, HasKind, KindOf, MachineSpec, StateActionOf};
 
 /// The outcome of one [`dispatch`] call, for tests and logs.
 ///
@@ -91,8 +91,8 @@ impl<M: MachineSpec> Machine<M> {
     ///
     /// Panics if `initial`, or any tag [`MachineSpec::all_tags`] lists, or any
     /// edge target, is missing from [`MachineSpec::STATES`]. In debug builds,
-    /// also panics if [`verify::coverage`] reports a defect (release builds
-    /// skip that check; call [`verify::coverage`] from a test to keep it
+    /// also panics if [`crate::verify::coverage`] reports a defect (release builds
+    /// skip that check; call [`crate::verify::coverage`] from a test to keep it
     /// enforced there).
     pub fn new(initial: M::Tag) -> Self {
         assert!(
@@ -117,7 +117,7 @@ impl<M: MachineSpec> Machine<M> {
 
         #[cfg(debug_assertions)]
         {
-            let cov = verify::coverage::<M>(initial, M::EDGES, M::IGNORES);
+            let cov = crate::verify::coverage::<M>(initial, M::EDGES, M::IGNORES);
             assert!(cov.is_clean(), "[chart] table has holes: {cov:?}");
         }
 
