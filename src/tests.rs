@@ -1558,3 +1558,148 @@ fn unemitted_actions_reports_what_a_feature_never_produces() {
         vec![CamAction::ShowCamera, CamAction::HideCamera]
     );
 }
+
+// ─────────────────────────────────────────── guard names across both layers
+// The defect `duplicate_node_names` exists for: two node *types* answering to
+// one name. `cond_node!` takes the name from the identifier, so this needs two
+// modules — which is exactly the drift the check is meant to catch.
+
+mod elsewhere {
+    use super::{Cond, RearCam};
+
+    // Same identifier as the `SpeedBelowLimit` above, declared somewhere else
+    // and meaning something else. Both report "SpeedBelowLimit".
+    crate::cond_node!(RearCam, SpeedBelowLimit, |_cx| Cond::True);
+}
+
+// How the collision actually reaches one rule list: `check!` takes an
+// identifier, so a node from another module has to be aliased on the way in —
+// and the alias renames the binding, never `name()`.
+use elsewhere::SpeedBelowLimit as Other;
+
+/// A feature whose two rules reach two different nodes sharing a name. Within
+/// one dispatch they share a `Memo` entry, so the second inherits the first's
+/// answer.
+struct Colliding;
+
+impl Feature<RearCam> for Colliding {
+    type Action = OverlayAction;
+
+    const NAME: &'static str = "Colliding";
+
+    const RULES: &'static [Rule<RearCam, OverlayAction>] = &[
+        Rule {
+            when: &[Kind::SpeedChanged],
+            check: crate::check!(SpeedBelowLimit),
+            unknown: OnUnknown::Deny,
+            emit: &[OverlayAction::UpdateOverlay],
+        },
+        Rule {
+            when: &[Kind::SpeedChanged],
+            check: crate::check!(Other),
+            unknown: OnUnknown::Deny,
+            emit: &[OverlayAction::UpdateOverlay],
+        },
+    ];
+
+    fn perform(action: OverlayAction, ev: &Event, world: &mut Env) {
+        Overlay::perform(action, ev, world);
+    }
+}
+
+/// Reuse is the normal case and must not be reported: `Shared` names one node
+/// on two rules, and `CAMERA_FEATURES` spreads nodes across two features.
+#[test]
+fn duplicate_node_names_passes_a_node_reused_across_rules_and_features() {
+    assert!(verify::duplicate_node_names(&[&Shared], &[]).is_empty());
+    assert!(verify::duplicate_node_names(CAMERA_FEATURES, &[]).is_empty());
+}
+
+/// Two types, one name. Nothing in the feature layer caught this before, and
+/// the second node's `eval` never runs to reveal it.
+#[test]
+fn duplicate_node_names_reports_two_types_sharing_a_name() {
+    assert_eq!(
+        verify::duplicate_node_names(&[&Colliding], &[]),
+        vec!["SpeedBelowLimit"]
+    );
+}
+
+/// The collision that spans the layers: the feature names one node, the machine
+/// table names the other. Neither `coverage` nor a per-feature scan can see it,
+/// which is why the check takes both.
+#[test]
+fn duplicate_node_names_spans_features_and_machines() {
+    let by_machine = verify::guard_nodes::<RearCam>(EDGES);
+
+    // The machine table alone is clean: it only ever names the original node.
+    assert!(
+        verify::coverage::<RearCam>(Tag::Off, EDGES, IGNORES)
+            .duplicate_node_names
+            .is_empty()
+    );
+    // So is the feature that names only the other one.
+    assert!(verify::duplicate_node_names(&[&Colliding2], &[]).is_empty());
+
+    // Together they collide.
+    assert_eq!(
+        verify::duplicate_node_names(&[&Colliding2], &[&by_machine]),
+        vec!["SpeedBelowLimit"]
+    );
+}
+
+/// Names only `elsewhere`'s node, so it is clean on its own.
+struct Colliding2;
+
+impl Feature<RearCam> for Colliding2 {
+    type Action = OverlayAction;
+
+    const NAME: &'static str = "Colliding2";
+
+    const RULES: &'static [Rule<RearCam, OverlayAction>] = &[Rule {
+        when: &[Kind::SpeedChanged],
+        check: crate::check!(Other),
+        unknown: OnUnknown::Deny,
+        emit: &[OverlayAction::UpdateOverlay],
+    }];
+
+    fn perform(action: OverlayAction, ev: &Event, world: &mut Env) {
+        Overlay::perform(action, ev, world);
+    }
+}
+
+/// `guard_nodes` reports every reference, repeats included — deduping is
+/// `duplicate_node_names`' job, since a name is only a defect when a *second
+/// type* carries it.
+#[test]
+fn guard_nodes_keeps_repeat_references() {
+    let ids = verify::guard_nodes::<RearCam>(EDGES);
+    let gear = ids
+        .iter()
+        .filter(|(n, _)| *n == "GearIsReverse")
+        .count();
+
+    assert!(gear > 1, "{ids:?}");
+}
+
+/// The consequence the check is standing in for: with two nodes sharing a name,
+/// the second rule never evaluates its own guard.
+#[test]
+fn a_shared_name_makes_the_second_node_inherit_the_first_answer() {
+    let mut w = Env {
+        // `SpeedBelowLimit` is False here; `elsewhere`'s node is always True,
+        // so rule two would emit if it were the one being asked.
+        speed: Some(200.0),
+        ..Default::default()
+    };
+
+    Colliding.dispatch(&Event::SpeedChanged, &mut w);
+
+    assert!(
+        w.performed.is_empty(),
+        "rule two inherited the cached False: {:?}",
+        w.performed
+    );
+    // One lookup, not two: the second node's `eval` was never reached.
+    assert_eq!(w.speed_lookups.get(), 1);
+}

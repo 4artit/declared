@@ -5,6 +5,17 @@
 //! one feature, so the same node backs a [`crate::machine::Edge`] and a
 //! [`crate::feature::Rule`]. That is what keeps "power is on" one definition
 //! for a whole controller rather than one per table.
+//!
+//! # Node names are unique per domain
+//!
+//! [`Memo`] keys on [`CondNode::name`], so two node types answering to one name
+//! is a defect: the second inherits the first's result without running.
+//! [`crate::verify::duplicate_node_names`] enforces it — run it in a test next
+//! to [`crate::verify::coverage`].
+//!
+//! Where the nodes are declared does not matter. Keeping a domain's guards in
+//! one module gets the names for free, since Rust rejects the second
+//! declaration.
 
 mod cond;
 mod node;

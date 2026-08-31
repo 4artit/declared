@@ -1,8 +1,10 @@
-//! Exhaustive checks over a transition table: the combinations it leaves out,
-//! the declarations it contradicts, and the names it reuses.
+//! Exhaustive checks over a controller's declaration: the combinations a
+//! transition table leaves out, the declarations it contradicts, and the guard
+//! names it reuses across either layer.
 
 use std::any::TypeId;
 
+use crate::feature::AnyFeature;
 use crate::machine::{Edge, Goto, Ignore};
 use crate::{Domain, MachineSpec};
 
@@ -111,20 +113,9 @@ pub fn coverage<M: MachineSpec>(
         }
     }
 
-    // Reusing one node across many edges is normal. What must be caught is two
-    // *different* node types sharing a name, since they would then share a Memo
-    // entry and poison each other's cached result.
-    let mut node_ids: Vec<(&'static str, TypeId)> = Vec::new();
-    for e in edges {
-        e.check.node_ids(&mut node_ids);
-    }
-    node_ids.sort_unstable();
-    node_ids.dedup();
-    for w in node_ids.windows(2) {
-        if w[0].0 == w[1].0 && !out.duplicate_node_names.contains(&w[0].0) {
-            out.duplicate_node_names.push(w[0].0);
-        }
-    }
+    // Only this machine's own edges: a guard shared with a feature is checked
+    // controller-wide by `duplicate_node_names`, which this cannot see.
+    out.duplicate_node_names = names_shared_by_two_types(guard_nodes(edges));
 
     // Unlike node names, every repeat is a defect, so the list is not deduped
     // before the scan.
@@ -137,6 +128,70 @@ pub fn coverage<M: MachineSpec>(
     }
 
     out
+}
+
+/// Names carried by more than one node *type*.
+///
+/// Deduping first is what makes reuse legal: one node named on twenty rows
+/// collapses to a single pair, so only a name two types answer to survives.
+fn names_shared_by_two_types(mut node_ids: Vec<(&'static str, TypeId)>) -> Vec<&'static str> {
+    node_ids.sort_unstable();
+    node_ids.dedup();
+
+    let mut out: Vec<&'static str> = Vec::new();
+    for w in node_ids.windows(2) {
+        if w[0].0 == w[1].0 && !out.contains(&w[0].0) {
+            out.push(w[0].0);
+        }
+    }
+    out
+}
+
+/// The guard nodes a transition table references, as `(name, type id)`.
+///
+/// Pass this to [`duplicate_node_names`] alongside a feature list, the way
+/// [`handled_kinds`] is passed to [`crate::feature::unhandled_kinds`], so a
+/// controller mixing both layers is checked as one unit.
+///
+/// - `edges`: the transition table to scan.
+///
+/// Returns one pair per node reference, repeats included — [`duplicate_node_names`]
+/// dedupes.
+pub fn guard_nodes<M: MachineSpec>(edges: &'static [Edge<M>]) -> Vec<(&'static str, TypeId)> {
+    let mut out: Vec<(&'static str, TypeId)> = Vec::new();
+    for e in edges {
+        e.check.node_ids(&mut out);
+    }
+    out
+}
+
+/// Guard node names used by more than one node type across a whole controller.
+///
+/// Node names are unique per domain: [`crate::guard::Memo`] keys on the name, so
+/// two node types answering to one name make the second inherit the first's
+/// result without running.
+///
+/// [`Coverage::duplicate_node_names`] is the same check over one machine's
+/// edges. This one spans both layers, which no [`Coverage`] can see.
+///
+/// - `features`: the controller's feature list.
+/// - `elsewhere`: nodes referenced outside that list, e.g. [`guard_nodes`] for
+///   each state machine the controller also runs; pass `&[]` if there are none.
+///
+/// Returns the offending names, sorted and without repeats. **Must be empty in
+/// CI.**
+pub fn duplicate_node_names<D: Domain>(
+    features: &[&dyn AnyFeature<D>],
+    elsewhere: &[&[(&'static str, TypeId)]],
+) -> Vec<&'static str> {
+    let mut ids: Vec<(&'static str, TypeId)> = Vec::new();
+    for f in features {
+        f.node_ids(&mut ids);
+    }
+    for group in elsewhere {
+        ids.extend_from_slice(group);
+    }
+    names_shared_by_two_types(ids)
 }
 
 /// The event kinds a transition table acts on. `Ignore`d kinds do not count —

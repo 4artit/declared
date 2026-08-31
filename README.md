@@ -136,6 +136,10 @@ Bigger examples:
   combination and reports the ones with no edge and no declared `Ignore`.
   Assert `is_clean()` in a test, and a forgotten case fails CI instead of
   surfacing in production.
+- **One definition per condition.** A guard is declared against the `Domain`,
+  so "power is on" is one node shared by every table rather than one per table.
+  Node names are unique per domain: `verify::duplicate_node_names` reads the
+  features and the machines together and reports two node types sharing a name.
 - **Guards that admit failure.** Conditions evaluate to `True`/`False`/
   `Unknown` instead of `bool`, and `Edge::unknown` names the fail-open or
   fail-closed policy explicitly — it shows up on the diagram instead of

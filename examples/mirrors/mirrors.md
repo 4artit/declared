@@ -63,3 +63,4 @@ stateDiagram-v2
 | Events nothing handles | [UserChanged] |
 | Holes in the fold table | [] |
 | Fold table is clean | true |
+| Guard names used by two node types | [] |

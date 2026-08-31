@@ -19,7 +19,7 @@ mod heating;
 
 use chart::feature::{self, AnyFeature};
 use chart::machine::{self, Machine};
-use chart::{Domain, HasKind, render};
+use chart::{Domain, HasKind, render, verify};
 
 use dimming::Dimming;
 use fold::FoldSm;
@@ -145,6 +145,11 @@ fn document() -> String {
     let cov = fold::coverage();
     assert!(cov.is_clean(), "{cov:?}");
 
+    // Both layers at once again, for the other thing they share: node names are
+    // unique per domain, and only a check spanning both can say so.
+    let dup = verify::duplicate_node_names(FEATURES, &[&fold::guard_nodes()]);
+    assert!(dup.is_empty(), "guard names used by two node types: {dup:?}");
+
     format!(
         "\
 # Mirrors controller
@@ -185,6 +190,7 @@ Folding and unfolding are observable states, so this one is a state machine.
 | Events nothing handles | {unhandled:?} |
 | Holes in the fold table | {holes:?} |
 | Fold table is clean | {clean} |
+| Guard names used by two node types | {dup:?} |
 ",
         table = render::io_table(FEATURES),
         rules = render::rule_table(FEATURES),
@@ -193,6 +199,7 @@ Folding and unfolding are observable states, so this one is a state machine.
         unhandled = unhandled,
         holes = cov.holes,
         clean = cov.is_clean(),
+        dup = dup,
     )
 }
 

@@ -178,6 +178,11 @@ pub fn handled_kinds() -> Vec<Kind> {
     verify::handled_kinds::<FoldSm>(EDGES)
 }
 
+/// The guard nodes this machine names, for the controller-wide check.
+pub fn guard_nodes() -> Vec<(&'static str, std::any::TypeId)> {
+    verify::guard_nodes::<FoldSm>(EDGES)
+}
+
 pub fn coverage() -> Coverage {
     verify::coverage::<FoldSm>(INITIAL, EDGES, IGNORES)
 }

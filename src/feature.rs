@@ -14,6 +14,8 @@
 //! is exhaustive over exactly the effects it declares. [`AnyFeature`] is the one
 //! uniform face a controller needs to walk them all despite that.
 
+use std::any::TypeId;
+
 use crate::guard::{Cx, Expr, Memo, OnUnknown};
 use crate::{Domain, Enumerable, HasKind};
 
@@ -99,6 +101,15 @@ pub trait AnyFeature<D: Domain>: Sync {
     /// Every rule, in priority order.
     fn rows(&self) -> Vec<RuleRow<D>>;
 
+    /// Collects `(name, type id)` for every guard node this feature's rules
+    /// reference.
+    ///
+    /// - `out`: pairs are appended here, for
+    ///   [`crate::verify::duplicate_node_names`], which needs the type
+    ///   alongside the name to tell a reused node from two nodes sharing a
+    ///   name.
+    fn node_ids(&self, out: &mut Vec<(&'static str, TypeId)>);
+
     /// Takes the first rule that matches `ev` and carries out its actions.
     ///
     /// - `ev`: the event to dispatch.
@@ -153,6 +164,12 @@ impl<D: Domain, F: Feature<D>> AnyFeature<D> for F {
                 emit: r.emit.iter().map(|a| format!("{a:?}")).collect(),
             })
             .collect()
+    }
+
+    fn node_ids(&self, out: &mut Vec<(&'static str, TypeId)>) {
+        for r in F::RULES {
+            r.check.node_ids(out);
+        }
     }
 
     fn dispatch(&self, ev: &D::Event, world: &mut D::Env) {

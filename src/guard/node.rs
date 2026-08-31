@@ -174,7 +174,9 @@ macro_rules! cond_node {
 
 /// Builds a guard expression. Supports `&&` chains and a leading `!`.
 ///
-/// `||` is not supported; use [`Expr::Or`] directly.
+/// `||` is left out on purpose: two reasons to take a row are two rows, each
+/// with its own [`crate::machine::Edge::id`]. For a disjunction that really is
+/// one condition, use De Morgan (`!(!A && !B)`) or [`Expr::Or`].
 #[macro_export]
 macro_rules! check {
     () => { &$crate::guard::Expr::Always };
