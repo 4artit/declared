@@ -92,6 +92,8 @@ fn perform_for_event(action: Action, ev: &Event, world: &mut Env) {
 }
 
 impl MachineSpec for RearCam {
+    const NAME: &'static str = "RearCam";
+
     type Domain = RearCam;
     type Tag = Tag;
     // This machine's edges and its states drive the same effects, so both of
@@ -429,7 +431,7 @@ stateDiagram-v2
 
     // No machine needed: the diagram comes from the static tables alone.
     assert_eq!(
-        render::to_mermaid::<RearCam>(Tag::Off, EDGES, STATES),
+        render::state_diagram::<RearCam>(Tag::Off, EDGES, STATES),
         expected
     );
 }
@@ -649,6 +651,8 @@ impl Domain for PartialCam {
 }
 
 impl MachineSpec for PartialCam {
+    const NAME: &'static str = "PartialCam";
+
     type Domain = PartialCam;
     type Tag = Tag;
     type Action = Action;
@@ -835,6 +839,8 @@ crate::tags! {
 struct ChainSm;
 
 impl MachineSpec for ChainSm {
+    const NAME: &'static str = "ChainSm";
+
     type Domain = RearCam;
     type Tag = ChainTag;
     type Action = Action;
@@ -915,6 +921,8 @@ impl Domain for Broken {
 }
 
 impl MachineSpec for Broken {
+    const NAME: &'static str = "Broken";
+
     type Domain = Broken;
     type Tag = Tag;
     type Action = Action;
@@ -951,7 +959,7 @@ impl crate::guard::CondNode<Broken> for StillDuplicate {
     }
 }
 
-/// `Showing` is missing, so `to_mermaid` has no description to draw for it.
+/// `Showing` is missing, so `state_diagram` has no description to draw for it.
 static BROKEN_STATES: &[State<Broken>] = &[State {
     tag: Tag::Off,
     entry: &[],
@@ -1081,7 +1089,7 @@ fn coverage_reports_an_ignore_an_edge_contradicts() {
 
 #[test]
 fn mermaid_labels_a_guardless_edge_and_its_run_actions() {
-    let diagram = render::to_mermaid::<Broken>(Tag::Off, BROKEN_EDGES, BROKEN_STATES);
+    let diagram = render::state_diagram::<Broken>(Tag::Off, BROKEN_EDGES, BROKEN_STATES);
 
     assert!(
         diagram.contains("Off --> Off: GearChanged<br/>/ UpdateOverlay"),

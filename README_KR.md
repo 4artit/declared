@@ -26,6 +26,9 @@
 작은 `MachineSpec`만 옆에 추가하면 된다. 대부분의 컨트롤러는 `feature`로
 충분하고, 정말 필요한 곳에만 `machine`을 쓴다.
 
+선언 파일은 `chart::prelude::*` 한 줄이면 된다 — 트레잇, 행 타입, 가드 어휘가
+모두 들어 있다. 실행기는 뺐으니 `machine::dispatch`는 계속 출처를 밝힌다.
+
 ## 설치
 
 crates.io에 배포되지 않는다. 로컬 경로 의존성으로 쓴다.
@@ -40,9 +43,8 @@ chart = { path = "../chart" }
 전등을 껐다 켰다 하는 2상태 예제:
 
 ```rust
-use chart::guard::OnUnknown;
-use chart::machine::{self, Edge, Goto, Ignore, Machine, Source, State};
-use chart::{Domain, MachineSpec};
+use chart::machine;
+use chart::prelude::*;
 
 chart::tags! { enum Tag { Off, On } }
 chart::events! {
@@ -68,6 +70,8 @@ impl Domain for Light {
 }
 
 impl MachineSpec for Light {
+    const NAME: &'static str = "Light";
+
     type Domain = Light;
     type Tag = Tag;
     type Action = Action;
@@ -127,7 +131,7 @@ fn main() {
 
 - **실행기.** `machine::dispatch`(또는 `feature::dispatch`)가 작성한 표를
   그대로 읽는다 — 표와 어긋날 수 있는 별도의 해석 단계가 없다.
-- **다이어그램.** `render::to_mermaid`가 전이 표를 `stateDiagram-v2`로
+- **다이어그램.** `render::state_diagram`가 전이 표를 `stateDiagram-v2`로
   뽑아내고, `scripts/mermaid_to_plantuml.sh`로 PlantUML로도 바꿀 수 있다.
 - **누락 검사.** `verify::coverage`가 `(상태, 이벤트)` 조합을 전수
   순회해 엣지도 `Ignore`도 없는 것을 찾아낸다. 테스트에서 `is_clean()`을
@@ -166,7 +170,7 @@ src/
   machine.rs      // 상태 있는 층: Machine, dispatch, Taken
   machine/        // State, Edge, Source, Goto, Ignore
   verify.rs       // coverage, duplicate_node_names, unhandled_kinds, ...
-  render.rs       // to_mermaid, io_table, rule_table, io_flowchart
+  render.rs       // state_diagram, io_flowchart, *_table
 examples/
   door_lock/      // cargo run --example door_lock
   mirrors/        // cargo run --example mirrors

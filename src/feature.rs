@@ -219,7 +219,7 @@ impl<F: Feature> AnyFeature<F::Domain> for F {
             F::perform(a, ev, world);
         }
 
-        log::debug!("[chart] {}: {ev:?} -> {:?}", rule.id, rule.emit);
+        log::debug!("[chart] {}/{}: {ev:?} -> {:?}", F::NAME, rule.id, rule.emit);
         Some(rule.id)
     }
 }

@@ -51,6 +51,34 @@ mod tests;
 
 pub use enums::{Enumerable, HasKind};
 
+/// Everything a declaration file names, in one import.
+///
+/// A table is written against three modules at once — the traits here, the row
+/// types in [`machine`] or [`feature`], and [`guard`]'s vocabulary — so the
+/// imports were the longest part of a short file. The executors are left out on
+/// purpose: [`machine::dispatch`] reads as a step being taken and should say
+/// where it comes from.
+///
+/// ```
+/// use chart::prelude::*;
+///
+/// chart::tags! { enum Tag { Off, On } }
+/// chart::events! { #[derive(Debug)] enum Event => Kind { Toggle } }
+///
+/// struct Light;
+/// impl Domain for Light {
+///     type Event = Event;
+///     type EventKind = Kind;
+///     type Env = ();
+/// }
+/// ```
+pub mod prelude {
+    pub use crate::feature::{AnyFeature, Feature, Rule};
+    pub use crate::guard::{Cond, OnUnknown};
+    pub use crate::machine::{Edge, Goto, Ignore, Machine, Source, State};
+    pub use crate::{Domain, Enumerable, HasKind, MachineSpec, NoAction};
+}
+
 use std::fmt::Debug;
 
 /// What one controller's parts have in common: its events and its world. Every
@@ -103,6 +131,7 @@ pub trait Domain: Sized + 'static {
 /// use chart::NoAction;
 ///
 /// impl chart::MachineSpec for Sm {
+/// #   const NAME: &'static str = "Sm";
 /// #   type Domain = Dom;
 /// #   type Tag = Tag;
 ///     type Action = NoAction;
@@ -136,6 +165,11 @@ pub enum NoAction {}
 pub trait MachineSpec: Sized + 'static {
     /// The vocabulary this machine works in.
     type Domain: Domain;
+
+    /// Display name, used in reports and logs, like [`feature::Feature::NAME`].
+    /// A controller may run several machines, and an edge id is only unique
+    /// within one of them.
+    const NAME: &'static str;
 
     /// State identifier. [`tags!`] generates this together with its
     /// [`Enumerable`] impl.

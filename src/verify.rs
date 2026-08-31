@@ -11,6 +11,9 @@ use crate::{Domain, Enumerable, MachineSpec};
 /// The result of checking every `(state × event kind)` combination.
 #[derive(Debug, Default)]
 pub struct Coverage {
+    /// The machine this reports on, from [`MachineSpec::NAME`]. A controller
+    /// asserting several of these needs the failure to say which one.
+    pub machine: &'static str,
     /// Combinations with neither an edge nor an [`Ignore`]. **Must be empty in
     /// CI.**
     pub holes: Vec<(String, String)>,
@@ -54,7 +57,10 @@ pub fn coverage<M: MachineSpec>(
     edges: &'static [Edge<M>],
     ignores: &'static [Ignore<M>],
 ) -> Coverage {
-    let mut out = Coverage::default();
+    let mut out = Coverage {
+        machine: M::NAME,
+        ..Default::default()
+    };
 
     for &tag in M::all_tags() {
         for &kind in <M::Domain as Domain>::all_kinds() {

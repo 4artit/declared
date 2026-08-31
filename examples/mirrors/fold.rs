@@ -4,10 +4,9 @@
 //! The spec names [`crate::Mirrors`] as its domain, sharing that controller's
 //! events, actions, guards and `perform`.
 
-use chart::guard::OnUnknown;
-use chart::machine::{Edge, Goto, Ignore, Machine, Source, State};
+use chart::prelude::*;
 use chart::verify::Coverage;
-use chart::{MachineSpec, render, verify};
+use chart::{render, verify};
 
 use crate::guards::{AtFolded, AtUnfolded, PowerOff, PowerOn, SpeedAllowsFold, SpeedForcesUnfold};
 use crate::{Event, Kind, Mirrors, World};
@@ -32,6 +31,8 @@ pub enum StateAction {
 pub struct FoldSm;
 
 impl MachineSpec for FoldSm {
+    const NAME: &'static str = "FoldSm";
+
     type Domain = Mirrors;
     type Tag = FoldTag;
     type Action = chart::NoAction;
@@ -170,7 +171,7 @@ pub fn machine() -> Machine<FoldSm> {
 
 /// Drawn from the tables alone; no machine instance needed.
 pub fn diagram() -> String {
-    render::to_mermaid::<FoldSm>(INITIAL, EDGES, STATES)
+    render::state_diagram::<FoldSm>(INITIAL, EDGES, STATES)
 }
 
 /// The kinds this machine acts on, for the controller-wide check.

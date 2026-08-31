@@ -3,8 +3,7 @@
 //! Its effects, its rules and its execution are all here; nothing about heating
 //! is declared anywhere else.
 
-use chart::feature::{Feature, Rule};
-use chart::guard::OnUnknown;
+use chart::prelude::*;
 
 use crate::guards::DefogOn;
 use crate::{Event, Kind, Mirrors, World};

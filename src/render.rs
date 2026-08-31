@@ -10,7 +10,11 @@ use crate::guard::OnUnknown;
 use crate::machine::{Edge, Goto, Ignore, State};
 use crate::{Domain, Enumerable, MachineSpec};
 
-/// Builds a mermaid `stateDiagram-v2` diagram from a transition table.
+/// Builds a mermaid `stateDiagram-v2` from a transition table.
+///
+/// Named for what it draws, like [`io_flowchart`]: in this module a
+/// `*_diagram`/`*_flowchart` returns mermaid source and a `*_table` returns
+/// markdown.
 ///
 /// - `initial`: the machine's starting state.
 /// - `edges`: the transitions to draw. [`Goto::Internal`] edges are omitted —
@@ -19,7 +23,7 @@ use crate::{Domain, Enumerable, MachineSpec};
 ///
 /// Returns the diagram source. Converts to PlantUML almost line for line;
 /// see `scripts/mermaid_to_plantuml.sh`.
-pub fn to_mermaid<M: MachineSpec>(
+pub fn state_diagram<M: MachineSpec>(
     initial: M::Tag,
     edges: &'static [Edge<M>],
     states: &'static [State<M>],

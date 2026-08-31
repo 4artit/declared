@@ -5,8 +5,7 @@
 //! is read from the world, which the caller has already updated. That is why the
 //! condition is written once rather than once per event.
 
-use chart::feature::{Feature, Rule};
-use chart::guard::OnUnknown;
+use chart::prelude::*;
 
 use crate::guards::{GearReverse, PowerOn};
 use crate::{Event, Kind, Mirrors, World};

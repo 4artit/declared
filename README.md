@@ -28,6 +28,10 @@ controller works with — so a stateless feature that later needs history
 doesn't change; you just add a small `MachineSpec` next to it. Most
 controllers are mostly `feature`, with a `machine` where it's actually needed.
 
+Every declaration file imports `chart::prelude::*` — the traits, the row types
+and the guard vocabulary in one line. The executors stay out of it, so
+`machine::dispatch` still says where it comes from.
+
 ## Install
 
 Not published to crates.io — use it as a path dependency.
@@ -42,9 +46,8 @@ chart = { path = "../chart" }
 A two-state light switch:
 
 ```rust
-use chart::guard::OnUnknown;
-use chart::machine::{self, Edge, Goto, Ignore, Machine, Source, State};
-use chart::{Domain, MachineSpec};
+use chart::machine;
+use chart::prelude::*;
 
 chart::tags! { enum Tag { Off, On } }
 chart::events! {
@@ -70,6 +73,8 @@ impl Domain for Light {
 }
 
 impl MachineSpec for Light {
+    const NAME: &'static str = "Light";
+
     type Domain = Light;
     type Tag = Tag;
     type Action = Action;
@@ -130,7 +135,7 @@ Bigger examples:
 
 - **A runtime.** `machine::dispatch` (or `feature::dispatch`) reads the same
   table you wrote — no separate interpretation step to fall out of sync.
-- **A diagram.** `render::to_mermaid` turns the transition table into a
+- **A diagram.** `render::state_diagram` turns the transition table into a
   `stateDiagram-v2` you can drop straight into docs, or convert to PlantUML
   with `scripts/mermaid_to_plantuml.sh`.
 - **A gap check.** `verify::coverage` walks every `(state, event)`
@@ -171,7 +176,7 @@ src/
   machine.rs      // stateful layer: Machine, dispatch, Taken
   machine/        // State, Edge, Source, Goto, Ignore
   verify.rs       // coverage, duplicate_node_names, unhandled_kinds, ...
-  render.rs       // to_mermaid, io_table, rule_table, io_flowchart
+  render.rs       // state_diagram, io_flowchart, *_table
 examples/
   door_lock/      // cargo run --example door_lock
   mirrors/        // cargo run --example mirrors

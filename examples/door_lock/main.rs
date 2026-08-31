@@ -12,9 +12,8 @@
 //! from the event, so `Unlock` is an `Action` on the `UNLOCK` edge and only the
 //! clearing is left to `Unlocked`'s exit.
 
-use chart::guard::{Cond, OnUnknown};
-use chart::machine::{self, Edge, Goto, Ignore, Machine, Source, State};
-use chart::{Domain, MachineSpec, render, verify};
+use chart::prelude::*;
+use chart::{machine, render, verify};
 
 chart::tags! {
     enum Tag {
@@ -78,6 +77,8 @@ impl Domain for Door {
 }
 
 impl MachineSpec for Door {
+    const NAME: &'static str = "Door";
+
     type Domain = Door;
     type Tag = Tag;
     type Action = Action;
@@ -286,7 +287,7 @@ fn main() {
         }
     }
 
-    let diagram = render::to_mermaid::<Door>(INITIAL, EDGES, STATES);
+    let diagram = render::state_diagram::<Door>(INITIAL, EDGES, STATES);
     let md = format!("# Door lock FSM\n\n```mermaid\n{diagram}```\n");
     std::fs::write("examples/door_lock/door_lock.md", &md)
         .expect("failed to write examples/door_lock/door_lock.md");
