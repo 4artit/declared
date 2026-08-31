@@ -17,7 +17,7 @@
 use std::any::TypeId;
 
 use crate::guard::{Cx, Expr, Memo, OnUnknown};
-use crate::{Domain, Enumerable, HasKind};
+use crate::{Domain, HasKind};
 
 /// One rule of a feature: when it is considered, what must hold, and what it
 /// emits.
@@ -43,17 +43,23 @@ pub struct Rule<D: Domain, A: 'static> {
 ///
 /// The whole implementation is the table plus [`Feature::perform`]. There is no
 /// handler, so a feature can do nothing the table does not say.
-pub trait Feature<D: Domain>: Sync + 'static {
+pub trait Feature: Sync + 'static {
+    /// The vocabulary this feature works in. An associated type rather than a
+    /// parameter, like [`crate::MachineSpec::Domain`]: a feature belongs to one
+    /// controller.
+    type Domain: Domain;
+
     /// This feature's effects. Its own type, so [`Feature::perform`] below is
     /// exhaustive over them and adding one is a compile error here and nowhere
-    /// else.
-    type Action: Copy + PartialEq + std::fmt::Debug + 'static;
+    /// else. Bounded exactly like [`crate::MachineSpec::Action`];
+    /// [`crate::verify::unemitted_actions`] asks for the rest where it needs it.
+    type Action: Copy + std::fmt::Debug + 'static;
 
     /// Display name, used in tables and diagrams.
     const NAME: &'static str;
 
     /// The rules, in priority order.
-    const RULES: &'static [Rule<D, Self::Action>];
+    const RULES: &'static [Rule<Self::Domain, Self::Action>];
 
     /// Carries out one of this feature's actions — the only place it may mutate
     /// the world, since guards see `&Env`.
@@ -62,7 +68,11 @@ pub trait Feature<D: Domain>: Sync + 'static {
     /// - `ev`: the event being dispatched, for effects that need a runtime
     ///   value from its payload.
     /// - `world`: the outside world to mutate.
-    fn perform(action: Self::Action, ev: &D::Event, world: &mut D::Env);
+    fn perform(
+        action: Self::Action,
+        ev: &<Self::Domain as Domain>::Event,
+        world: &mut <Self::Domain as Domain>::Env,
+    );
 }
 
 /// One rule, flattened for rendering.
@@ -130,13 +140,13 @@ pub trait AnyFeature<D: Domain>: Sync {
     fn dispatch(&self, ev: &D::Event, world: &mut D::Env);
 }
 
-impl<D: Domain, F: Feature<D>> AnyFeature<D> for F {
+impl<F: Feature> AnyFeature<F::Domain> for F {
     fn name(&self) -> &'static str {
         F::NAME
     }
 
-    fn handles(&self) -> Vec<D::EventKind> {
-        D::all_kinds()
+    fn handles(&self) -> Vec<<F::Domain as Domain>::EventKind> {
+        <F::Domain as Domain>::all_kinds()
             .iter()
             .copied()
             .filter(|k| F::RULES.iter().any(|r| r.when.contains(k)))
@@ -154,7 +164,7 @@ impl<D: Domain, F: Feature<D>> AnyFeature<D> for F {
         out
     }
 
-    fn rows(&self) -> Vec<RuleRow<D>> {
+    fn rows(&self) -> Vec<RuleRow<F::Domain>> {
         F::RULES
             .iter()
             .map(|r| RuleRow {
@@ -172,7 +182,11 @@ impl<D: Domain, F: Feature<D>> AnyFeature<D> for F {
         }
     }
 
-    fn dispatch(&self, ev: &D::Event, world: &mut D::Env) {
+    fn dispatch(
+        &self,
+        ev: &<F::Domain as Domain>::Event,
+        world: &mut <F::Domain as Domain>::Env,
+    ) {
         let kind = ev.kind();
 
         // The borrow of `world` ends with `cx`, before the actions mutate it.
@@ -193,42 +207,4 @@ impl<D: Domain, F: Feature<D>> AnyFeature<D> for F {
 
         log::debug!("[chart] {}: {ev:?} -> {:?}", F::NAME, rule.emit);
     }
-}
-
-/// Event kinds nothing in the controller accounts for.
-///
-/// - `features`: the controller's feature list.
-/// - `elsewhere`: kinds handled outside that list, e.g.
-///   [`crate::verify::handled_kinds`] for each state machine the controller also
-///   runs; pass `&[]` if there are none.
-///
-/// Returns the event kinds handled by neither `features` nor `elsewhere`.
-pub fn unhandled_kinds<D: Domain>(
-    features: &[&dyn AnyFeature<D>],
-    elsewhere: &[&[D::EventKind]],
-) -> Vec<D::EventKind> {
-    D::all_kinds()
-        .iter()
-        .copied()
-        .filter(|k| !features.iter().any(|f| f.handles().contains(k)))
-        .filter(|k| !elsewhere.iter().any(|ks| ks.contains(k)))
-        .collect()
-}
-
-/// Actions `F` declares but no rule of `F` emits — dead effects.
-///
-/// One feature at a time rather than a whole controller at once: with an action
-/// type per feature, an orphaned effect is a question about the file that owns
-/// it.
-///
-/// Returns every value of `F::Action` missing from every [`Rule::emit`].
-pub fn unemitted_actions<D: Domain, F: Feature<D>>() -> Vec<F::Action>
-where
-    F::Action: Enumerable,
-{
-    <F::Action as Enumerable>::ALL
-        .iter()
-        .copied()
-        .filter(|a| !F::RULES.iter().any(|r| r.emit.contains(a)))
-        .collect()
 }

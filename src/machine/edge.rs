@@ -54,8 +54,9 @@ pub struct Edge<M: MachineSpec> {
     pub when: KindOf<M>,
     pub check: &'static Expr<M::Domain>,
     pub unknown: OnUnknown,
-    /// Actions run only by this transition, in declaration order.
-    pub run: &'static [ActionOf<M>],
+    /// Actions this transition emits, in declaration order. Named like
+    /// [`crate::feature::Rule::emit`]: both layers declare effects the same way.
+    pub emit: &'static [ActionOf<M>],
     pub goto: Goto<M>,
 }
 
@@ -69,6 +70,9 @@ pub struct Edge<M: MachineSpec> {
 /// [`crate::verify::Coverage::ignored_but_handled`].
 pub struct Ignore<M: MachineSpec> {
     pub from: Source<M>,
+    /// The kinds this covers. A list, unlike [`Edge::when`]: an edge is singular
+    /// because its [`Edge::id`] names one transition, while one `why` justifies
+    /// as many combinations as it applies to.
     pub when: &'static [KindOf<M>],
     /// Why this combination is intentionally unhandled.
     pub why: &'static str,

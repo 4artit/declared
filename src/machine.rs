@@ -19,7 +19,7 @@ pub struct Taken<M: MachineSpec> {
     /// The left state's exit actions. Empty for [`Goto::Internal`].
     pub exit: &'static [StateActionOf<M>],
     /// The selected edge's own actions.
-    pub run: &'static [ActionOf<M>],
+    pub emit: &'static [ActionOf<M>],
     /// The entered state's entry actions. Empty for [`Goto::Internal`].
     pub entry: &'static [StateActionOf<M>],
 }
@@ -30,7 +30,7 @@ impl<M: MachineSpec> std::fmt::Debug for Taken<M> {
         f.debug_struct("Taken")
             .field("edge", &self.edge)
             .field("exit", &self.exit)
-            .field("run", &self.run)
+            .field("emit", &self.emit)
             .field("entry", &self.entry)
             .finish()
     }
@@ -52,7 +52,7 @@ where
     fn eq(&self, other: &Self) -> bool {
         self.edge == other.edge
             && self.exit == other.exit
-            && self.run == other.run
+            && self.emit == other.emit
             && self.entry == other.entry
     }
 }
@@ -192,7 +192,7 @@ pub fn dispatch<M: MachineSpec>(
 
     let edge = &M::EDGES[hit];
     let id = edge.id;
-    let run = edge.run;
+    let emit = edge.emit;
 
     let target = match edge.goto {
         Goto::To(next) => Some(next),
@@ -210,20 +210,20 @@ pub fn dispatch<M: MachineSpec>(
     }
 
     Machine::<M>::perform_state_all(exit, world);
-    Machine::<M>::perform_all(run, ev, world);
+    Machine::<M>::perform_all(emit, ev, world);
     Machine::<M>::perform_state_all(entry, world);
 
     // `log::debug!` evaluates its arguments only when the level is enabled, so
     // this formats nothing in a release build with logging off.
     log::debug!(
-        "[chart] {id}: {ev:?} -> {:?} {exit:?} {run:?} {entry:?}",
+        "[chart] {id}: {ev:?} -> {:?} {exit:?} {emit:?} {entry:?}",
         m.tag
     );
 
     Some(Taken {
         edge: id,
         exit,
-        run,
+        emit,
         entry,
     })
 }

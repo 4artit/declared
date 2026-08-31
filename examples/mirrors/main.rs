@@ -17,7 +17,7 @@ mod fold;
 mod guards;
 mod heating;
 
-use chart::feature::{self, AnyFeature};
+use chart::feature::AnyFeature;
 use chart::machine::{self, Machine};
 use chart::{Domain, HasKind, render, verify};
 
@@ -137,7 +137,7 @@ fn main() {
 fn document() -> String {
     // Both layers at once: the machine's events are not holes.
     let by_fold = fold::handled_kinds();
-    let unhandled = feature::unhandled_kinds(FEATURES, &[&by_fold]);
+    let unhandled = verify::unhandled_kinds(FEATURES, &[&by_fold]);
 
     // `unhandled` is expected to list `UserChanged`, which nothing reacts to.
     // A defective fold table is not expected, so it fails the run rather than
@@ -149,6 +149,17 @@ fn document() -> String {
     // unique per domain, and only a check spanning both can say so.
     let dup = verify::duplicate_node_names(FEATURES, &[&fold::guard_nodes()]);
     assert!(dup.is_empty(), "guard names used by two node types: {dup:?}");
+
+    // One feature at a time: with an action type per feature, a dead effect is a
+    // question about the file that owns it.
+    let dead: Vec<String> = [
+        format!("{:?}", verify::unemitted_actions::<Heating>()),
+        format!("{:?}", verify::unemitted_actions::<Dimming>()),
+    ]
+    .into_iter()
+    .filter(|s| s != "[]")
+    .collect();
+    assert!(dead.is_empty(), "declared but never emitted: {dead:?}");
 
     format!(
         "\

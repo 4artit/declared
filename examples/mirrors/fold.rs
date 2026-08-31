@@ -94,7 +94,7 @@ static EDGES: &[Edge<FoldSm>] = &[
         when: Kind::PowerChanged,
         check: chart::check!(PowerOff && SpeedAllowsFold),
         unknown: OnUnknown::Deny,
-        run: &[],
+        emit: &[],
         goto: Goto::To(FoldTag::Folding),
     },
     Edge {
@@ -103,7 +103,7 @@ static EDGES: &[Edge<FoldSm>] = &[
         when: Kind::FoldPositionChanged,
         check: chart::check!(AtFolded),
         unknown: OnUnknown::Deny,
-        run: &[],
+        emit: &[],
         goto: Goto::To(FoldTag::Folded),
     },
     Edge {
@@ -112,7 +112,7 @@ static EDGES: &[Edge<FoldSm>] = &[
         when: Kind::PowerChanged,
         check: chart::check!(PowerOn),
         unknown: OnUnknown::Deny,
-        run: &[],
+        emit: &[],
         goto: Goto::To(FoldTag::Unfolding),
     },
     Edge {
@@ -121,7 +121,7 @@ static EDGES: &[Edge<FoldSm>] = &[
         when: Kind::SpeedChanged,
         check: chart::check!(SpeedForcesUnfold),
         unknown: OnUnknown::Deny,
-        run: &[],
+        emit: &[],
         goto: Goto::To(FoldTag::Unfolding),
     },
     Edge {
@@ -130,7 +130,7 @@ static EDGES: &[Edge<FoldSm>] = &[
         when: Kind::FoldPositionChanged,
         check: chart::check!(AtUnfolded),
         unknown: OnUnknown::Deny,
-        run: &[],
+        emit: &[],
         goto: Goto::To(FoldTag::Unfolded),
     },
 ];

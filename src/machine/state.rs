@@ -6,7 +6,7 @@ use crate::{MachineSpec, StateActionOf};
 /// transition logic belongs in the [`super::Edge`] table, not here.
 ///
 /// They hold [`crate::MachineSpec::StateAction`], from which the event is not
-/// reachable; an effect that reads it belongs in [`super::Edge::run`].
+/// reachable; an effect that reads it belongs in [`super::Edge::emit`].
 pub struct State<M: MachineSpec> {
     pub tag: M::Tag,
     /// Actions run on entry, in declaration order.

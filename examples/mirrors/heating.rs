@@ -17,9 +17,15 @@ pub enum Action {
     Off,
 }
 
+// Only needed by `verify::unemitted_actions`; `Feature` does not require it.
+impl chart::Enumerable for Action {
+    const ALL: &'static [Self] = &[Self::On, Self::Off];
+}
+
 pub struct Heating;
 
-impl Feature<Mirrors> for Heating {
+impl Feature for Heating {
+    type Domain = Mirrors;
     type Action = Action;
 
     const NAME: &'static str = "Heating";

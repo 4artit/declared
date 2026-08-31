@@ -54,10 +54,10 @@ pub fn to_mermaid<M: MachineSpec>(
         } else {
             ""
         };
-        let run = if e.run.is_empty() {
+        let emit = if e.emit.is_empty() {
             String::new()
         } else {
-            format!("<br/>/ {}", join_actions(e.run))
+            format!("<br/>/ {}", join_actions(e.emit))
         };
         for from in e.from.expand() {
             let label = if guard.is_empty() {
@@ -65,7 +65,7 @@ pub fn to_mermaid<M: MachineSpec>(
             } else {
                 format!("{:?}<br/>[{guard}]", e.when)
             };
-            let _ = writeln!(s, "    {from:?} --> {next:?}: {label}{unknown}{run}");
+            let _ = writeln!(s, "    {from:?} --> {next:?}: {label}{unknown}{emit}");
         }
     }
 
@@ -91,7 +91,7 @@ pub fn internal_table<M: MachineSpec>(edges: &'static [Edge<M>]) -> String {
                 "| `{from:?}` | `{:?}` | `{}` | {} | `{}` |",
                 e.when,
                 if guard.is_empty() { "—" } else { &guard },
-                join_actions(e.run),
+                join_actions(e.emit),
                 e.id
             );
         }

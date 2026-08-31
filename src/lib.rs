@@ -141,7 +141,7 @@ pub trait MachineSpec: Sized + 'static {
     /// [`Enumerable`] impl.
     type Tag: Enumerable;
 
-    /// An effect this machine's edges run: what [`machine::Edge::run`] holds.
+    /// An effect this machine's edges emit: what [`machine::Edge::emit`] holds.
     /// [`NoAction`] for a machine whose transitions produce nothing on their
     /// own.
     type Action: Copy + Debug + 'static;

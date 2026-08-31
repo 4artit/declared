@@ -40,7 +40,8 @@ chart = { path = "../chart" }
 전등을 껐다 켰다 하는 2상태 예제:
 
 ```rust
-use chart::machine::{self, Edge, Goto, Ignore, Machine, OnUnknown, Source, State};
+use chart::guard::OnUnknown;
+use chart::machine::{self, Edge, Goto, Ignore, Machine, Source, State};
 use chart::{Domain, MachineSpec};
 
 chart::tags! { enum Tag { Off, On } }
@@ -98,10 +99,10 @@ static STATES: &[State<Light>] = &[
 static EDGES: &[Edge<Light>] = &[
     Edge { id: "TURN_ON",  from: Source::These(&[Tag::Off]), when: Kind::Toggle,
            check: chart::check!(), unknown: OnUnknown::Deny,
-           run: &[Action::Click], goto: Goto::To(Tag::On) },
+           emit: &[Action::Click], goto: Goto::To(Tag::On) },
     Edge { id: "TURN_OFF", from: Source::These(&[Tag::On]),  when: Kind::Toggle,
            check: chart::check!(), unknown: OnUnknown::Deny,
-           run: &[Action::Click], goto: Goto::To(Tag::Off) },
+           emit: &[Action::Click], goto: Goto::To(Tag::Off) },
 ];
 
 static IGNORES: &[Ignore<Light>] = &[];
@@ -162,7 +163,8 @@ src/
   feature.rs      // 상태 없는 층: Feature, Rule, AnyFeature
   machine.rs      // 상태 있는 층: Machine, dispatch, Taken
   machine/        // State, Edge, Source, Goto, Ignore
-  render.rs       // to_mermaid, coverage, io_table, rule_table, io_flowchart
+  verify.rs       // coverage, duplicate_node_names, unhandled_kinds, ...
+  render.rs       // to_mermaid, io_table, rule_table, io_flowchart
 examples/
   door_lock/      // cargo run --example door_lock
   mirrors/        // cargo run --example mirrors

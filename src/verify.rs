@@ -4,9 +4,9 @@
 
 use std::any::TypeId;
 
-use crate::feature::AnyFeature;
+use crate::feature::{AnyFeature, Feature};
 use crate::machine::{Edge, Goto, Ignore};
-use crate::{Domain, MachineSpec};
+use crate::{Domain, Enumerable, MachineSpec};
 
 /// The result of checking every `(state × event kind)` combination.
 #[derive(Debug, Default)]
@@ -150,7 +150,7 @@ fn names_shared_by_two_types(mut node_ids: Vec<(&'static str, TypeId)>) -> Vec<&
 /// The guard nodes a transition table references, as `(name, type id)`.
 ///
 /// Pass this to [`duplicate_node_names`] alongside a feature list, the way
-/// [`handled_kinds`] is passed to [`crate::feature::unhandled_kinds`], so a
+/// [`handled_kinds`] is passed to [`unhandled_kinds`], so a
 /// controller mixing both layers is checked as one unit.
 ///
 /// - `edges`: the transition table to scan.
@@ -195,7 +195,7 @@ pub fn duplicate_node_names<D: Domain>(
 }
 
 /// The event kinds a transition table acts on. `Ignore`d kinds do not count —
-/// pass this to [`crate::feature::unhandled_kinds`] alongside a feature list so
+/// pass this to [`unhandled_kinds`] alongside a feature list so
 /// a controller mixing both layers is checked as one unit.
 ///
 /// - `edges`: the transition table to scan.
@@ -211,4 +211,42 @@ pub fn handled_kinds<M: MachineSpec>(
         }
     }
     out
+}
+
+/// Event kinds nothing in the controller accounts for.
+///
+/// - `features`: the controller's feature list.
+/// - `elsewhere`: kinds handled outside that list, e.g.
+///   [`handled_kinds`] for each state machine the controller also
+///   runs; pass `&[]` if there are none.
+///
+/// Returns the event kinds handled by neither `features` nor `elsewhere`.
+pub fn unhandled_kinds<D: Domain>(
+    features: &[&dyn AnyFeature<D>],
+    elsewhere: &[&[D::EventKind]],
+) -> Vec<D::EventKind> {
+    D::all_kinds()
+        .iter()
+        .copied()
+        .filter(|k| !features.iter().any(|f| f.handles().contains(k)))
+        .filter(|k| !elsewhere.iter().any(|ks| ks.contains(k)))
+        .collect()
+}
+
+/// Actions `F` declares but no rule of `F` emits — dead effects.
+///
+/// One feature at a time rather than a whole controller at once: with an action
+/// type per feature, an orphaned effect is a question about the file that owns
+/// it.
+///
+/// Returns every value of `F::Action` missing from every [`crate::feature::Rule::emit`].
+pub fn unemitted_actions<F: Feature>() -> Vec<F::Action>
+where
+    F::Action: Enumerable,
+{
+    <F::Action as Enumerable>::ALL
+        .iter()
+        .copied()
+        .filter(|a| !F::RULES.iter().any(|r| r.emit.contains(a)))
+        .collect()
 }

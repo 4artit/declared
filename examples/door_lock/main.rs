@@ -169,7 +169,7 @@ static EDGES: &[Edge<Door>] = &[
         check: chart::check!(CodeCorrect),
         unknown: OnUnknown::Deny,
         // Reads the digits out of `EnterCode`, so it belongs to this edge.
-        run: &[Action::Unlock],
+        emit: &[Action::Unlock],
         goto: Goto::To(Tag::Unlocked),
     },
     Edge {
@@ -178,7 +178,7 @@ static EDGES: &[Edge<Door>] = &[
         when: Kind::EnterCode,
         check: chart::check!(!CodeCorrect && !AttemptsExceeded),
         unknown: OnUnknown::Deny,
-        run: &[Action::Beep, Action::IncrementAttempts],
+        emit: &[Action::Beep, Action::IncrementAttempts],
         goto: Goto::Internal,
     },
     Edge {
@@ -187,7 +187,7 @@ static EDGES: &[Edge<Door>] = &[
         when: Kind::EnterCode,
         check: chart::check!(!CodeCorrect && AttemptsExceeded),
         unknown: OnUnknown::Deny,
-        run: &[],
+        emit: &[],
         goto: Goto::To(Tag::Alarm),
     },
     Edge {
@@ -196,7 +196,7 @@ static EDGES: &[Edge<Door>] = &[
         when: Kind::Timeout,
         check: chart::check!(),
         unknown: OnUnknown::Deny,
-        run: &[],
+        emit: &[],
         goto: Goto::To(Tag::Locked),
     },
     Edge {
@@ -205,7 +205,7 @@ static EDGES: &[Edge<Door>] = &[
         when: Kind::Reset,
         check: chart::check!(),
         unknown: OnUnknown::Deny,
-        run: &[],
+        emit: &[],
         goto: Goto::To(Tag::Locked),
     },
     Edge {
@@ -214,7 +214,7 @@ static EDGES: &[Edge<Door>] = &[
         when: Kind::MaintenanceToggle,
         check: chart::check!(),
         unknown: OnUnknown::Deny,
-        run: &[],
+        emit: &[],
         goto: Goto::To(Tag::Maintenance),
     },
     Edge {
@@ -223,7 +223,7 @@ static EDGES: &[Edge<Door>] = &[
         when: Kind::MaintenanceToggle,
         check: chart::check!(),
         unknown: OnUnknown::Deny,
-        run: &[],
+        emit: &[],
         goto: Goto::To(Tag::Locked),
     },
 ];

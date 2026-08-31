@@ -9,7 +9,7 @@
 
 use std::cell::Cell;
 
-use super::feature::{self, AnyFeature, Feature, Rule};
+use super::feature::{AnyFeature, Feature, Rule};
 use super::guard::{Cond, Cx, Expr, Memo, OnUnknown};
 use super::machine::{self, Edge, Goto, Ignore, Machine, Source, State, Taken};
 use super::{Domain, Enumerable, HasKind, MachineSpec, render, verify};
@@ -155,7 +155,7 @@ static EDGES: &[Edge<RearCam>] = &[
         when: Kind::GearChanged,
         check: crate::check!(GearIsReverse && SpeedBelowLimit),
         unknown: OnUnknown::Deny, // unknown speed: do not turn it on
-        run: &[],
+        emit: &[],
         goto: Goto::To(Tag::Showing),
     },
     Edge {
@@ -164,7 +164,7 @@ static EDGES: &[Edge<RearCam>] = &[
         when: Kind::GearChanged,
         check: crate::check!(!GearIsReverse),
         unknown: OnUnknown::Deny,
-        run: &[],
+        emit: &[],
         goto: Goto::To(Tag::Off),
     },
     Edge {
@@ -173,7 +173,7 @@ static EDGES: &[Edge<RearCam>] = &[
         when: Kind::SpeedChanged,
         check: crate::check!(!SpeedBelowLimit),
         unknown: OnUnknown::Allow, // unknown speed: turn it off
-        run: &[],
+        emit: &[],
         goto: Goto::To(Tag::Off),
     },
     Edge {
@@ -182,7 +182,7 @@ static EDGES: &[Edge<RearCam>] = &[
         when: Kind::SpeedChanged,
         check: crate::check!(SpeedBelowLimit),
         unknown: OnUnknown::Deny,
-        run: &[Action::UpdateOverlay],
+        emit: &[Action::UpdateOverlay],
         goto: Goto::Internal, // stays in state, so exit/enter do not run
     },
 ];
@@ -232,7 +232,7 @@ fn enters_showing_and_runs_entry_action() {
     assert_eq!(taken.edge, "CAM_ON");
     assert_eq!(taken.entry, [Action::ShowCamera]);
     assert!(taken.exit.is_empty());
-    assert!(taken.run.is_empty());
+    assert!(taken.emit.is_empty());
     assert_eq!(m.tag(), Tag::Showing);
     assert_eq!(w.performed, vec![Action::ShowCamera]);
     assert!(w.camera_visible);
@@ -272,7 +272,7 @@ fn taken_is_debug_clone_and_eq() {
 
     assert_eq!(
         format!("{on:?}"),
-        r#"Taken { edge: "CAM_ON", exit: [], run: [], entry: [ShowCamera] }"#
+        r#"Taken { edge: "CAM_ON", exit: [], emit: [], entry: [ShowCamera] }"#
     );
     assert_eq!(on.clone(), on);
 
@@ -287,7 +287,7 @@ fn taken_eq_compares_every_field() {
     let base: Taken<RearCam> = Taken {
         edge: "CAM_ON",
         exit: &[],
-        run: &[],
+        emit: &[],
         entry: &[],
     };
 
@@ -302,7 +302,7 @@ fn taken_eq_compares_every_field() {
     assert_ne!(
         base,
         Taken {
-            run: &[Action::UpdateOverlay],
+            emit: &[Action::UpdateOverlay],
             ..base
         }
     );
@@ -678,7 +678,7 @@ static PARTIAL_EDGES: &[Edge<PartialCam>] = &[Edge {
     when: Kind::GearChanged,
     check: crate::check!(),
     unknown: OnUnknown::Deny,
-    run: &[],
+    emit: &[],
     goto: Goto::To(Tag::Showing), // absent from all_tags and from PARTIAL_STATES
 }];
 
@@ -754,7 +754,7 @@ static DEFECTIVE_EDGES: &[Edge<RearCam>] = &[
         when: Kind::GearChanged,
         check: crate::check!(),
         unknown: OnUnknown::Deny,
-        run: &[],
+        emit: &[],
         goto: Goto::To(Tag::Off),
     },
     Edge {
@@ -763,7 +763,7 @@ static DEFECTIVE_EDGES: &[Edge<RearCam>] = &[
         when: Kind::GearChanged,
         check: crate::check!(),
         unknown: OnUnknown::Deny,
-        run: &[],
+        emit: &[],
         goto: Goto::Internal,
     },
     Edge {
@@ -775,7 +775,7 @@ static DEFECTIVE_EDGES: &[Edge<RearCam>] = &[
             &Expr::And(&Expr::Node(&AlsoDuplicated), &Expr::Node(&StillDuplicated)),
         ),
         unknown: OnUnknown::Deny,
-        run: &[],
+        emit: &[],
         goto: Goto::To(Tag::Off),
     },
     Edge {
@@ -784,7 +784,7 @@ static DEFECTIVE_EDGES: &[Edge<RearCam>] = &[
         when: Kind::PowerChanged,
         check: crate::check!(),
         unknown: OnUnknown::Deny,
-        run: &[],
+        emit: &[],
         goto: Goto::To(Tag::Showing),
     },
 ];
@@ -879,7 +879,7 @@ static CHAIN_EDGES: &[Edge<ChainSm>] = &[
         when: Kind::SpeedChanged,
         check: crate::check!(),
         unknown: OnUnknown::Deny,
-        run: &[],
+        emit: &[],
         goto: Goto::To(ChainTag::Last),
     },
     Edge {
@@ -888,7 +888,7 @@ static CHAIN_EDGES: &[Edge<ChainSm>] = &[
         when: Kind::GearChanged,
         check: crate::check!(),
         unknown: OnUnknown::Deny,
-        run: &[],
+        emit: &[],
         goto: Goto::To(ChainTag::Middle),
     },
 ];
@@ -965,7 +965,7 @@ static BROKEN_EDGES: &[Edge<Broken>] = &[
         when: Kind::GearChanged,
         check: crate::check!(),
         unknown: OnUnknown::Deny,
-        run: &[Action::UpdateOverlay],
+        emit: &[Action::UpdateOverlay],
         goto: Goto::To(Tag::Off), // nothing reaches Showing
     },
     Edge {
@@ -977,7 +977,7 @@ static BROKEN_EDGES: &[Edge<Broken>] = &[
             &Expr::And(&Expr::Node(&AlsoDuplicate), &Expr::Node(&StillDuplicate)),
         ),
         unknown: OnUnknown::Deny,
-        run: &[],
+        emit: &[],
         goto: Goto::To(Tag::Off),
     },
     Edge {
@@ -986,7 +986,7 @@ static BROKEN_EDGES: &[Edge<Broken>] = &[
         when: Kind::PowerChanged,
         check: crate::check!(),
         unknown: OnUnknown::Deny,
-        run: &[],
+        emit: &[],
         goto: Goto::Internal,
     },
     Edge {
@@ -995,7 +995,7 @@ static BROKEN_EDGES: &[Edge<Broken>] = &[
         when: Kind::SpeedChanged,
         check: crate::check!(),
         unknown: OnUnknown::Deny,
-        run: &[],
+        emit: &[],
         goto: Goto::To(Tag::Off),
     },
     Edge {
@@ -1004,7 +1004,7 @@ static BROKEN_EDGES: &[Edge<Broken>] = &[
         when: Kind::PowerChanged,
         check: crate::check!(),
         unknown: OnUnknown::Deny,
-        run: &[],
+        emit: &[],
         goto: Goto::To(Tag::Off),
     },
 ];
@@ -1122,7 +1122,8 @@ impl Enumerable for CamAction {
 
 struct Camera;
 
-impl Feature<RearCam> for Camera {
+impl Feature for Camera {
+    type Domain = RearCam;
     type Action = CamAction;
 
     const NAME: &'static str = "Camera";
@@ -1165,7 +1166,8 @@ impl Enumerable for OverlayAction {
 
 struct Overlay;
 
-impl Feature<RearCam> for Overlay {
+impl Feature for Overlay {
+    type Domain = RearCam;
     type Action = OverlayAction;
 
     const NAME: &'static str = "Overlay";
@@ -1248,7 +1250,8 @@ fn dispatch_denies_an_undecidable_guard() {
 /// The same feature, told to act when the lookup fails.
 struct Optimist;
 
-impl Feature<RearCam> for Optimist {
+impl Feature for Optimist {
+    type Domain = RearCam;
     type Action = OverlayAction;
 
     const NAME: &'static str = "Optimist";
@@ -1278,7 +1281,8 @@ fn dispatch_allows_an_undecidable_guard_when_told_to() {
 /// happens once even though the node is reached twice.
 struct Shared;
 
-impl Feature<RearCam> for Shared {
+impl Feature for Shared {
+    type Domain = RearCam;
     type Action = CamAction;
 
     const NAME: &'static str = "Shared";
@@ -1322,7 +1326,8 @@ fn dispatch_evaluates_a_shared_node_once() {
 /// the summary table does not repeat itself.
 struct Noisy;
 
-impl Feature<RearCam> for Noisy {
+impl Feature for Noisy {
+    type Domain = RearCam;
     type Action = CamAction;
 
     const NAME: &'static str = "Noisy";
@@ -1380,7 +1385,8 @@ fn io_table_lists_each_feature() {
 /// empty cell.
 struct Idle;
 
-impl Feature<RearCam> for Idle {
+impl Feature for Idle {
+    type Domain = RearCam;
     type Action = CamAction;
 
     const NAME: &'static str = "Idle";
@@ -1428,7 +1434,8 @@ fn rule_table_calls_a_covered_unguarded_rule_else() {
 /// A rule with nothing before it really is unconditional, so it gets a dash.
 struct Always;
 
-impl Feature<RearCam> for Always {
+impl Feature for Always {
+    type Domain = RearCam;
     type Action = OverlayAction;
 
     const NAME: &'static str = "Always";
@@ -1517,7 +1524,7 @@ fn io_flowchart_leaves_an_unconditional_arrow_bare() {
 fn unhandled_kinds_reports_what_no_feature_takes() {
     // PowerChanged is in the event enum but no feature declares it.
     assert_eq!(
-        feature::unhandled_kinds(CAMERA_FEATURES, &[]),
+        verify::unhandled_kinds(CAMERA_FEATURES, &[]),
         vec![Kind::PowerChanged]
     );
 }
@@ -1534,7 +1541,7 @@ fn unhandled_kinds_counts_edges_but_not_ignores() {
         "PowerChanged only has an Ignore"
     );
     assert_eq!(
-        feature::unhandled_kinds(CAMERA_FEATURES, &[&by_machine]),
+        verify::unhandled_kinds(CAMERA_FEATURES, &[&by_machine]),
         vec![Kind::PowerChanged]
     );
 }
@@ -1545,16 +1552,16 @@ fn unhandled_kinds_counts_edges_but_not_ignores() {
 #[test]
 fn unemitted_actions_reports_what_a_feature_never_produces() {
     assert_eq!(
-        feature::unemitted_actions::<RearCam, Overlay>(),
+        verify::unemitted_actions::<Overlay>(),
         Vec::<OverlayAction>::new()
     );
     assert_eq!(
-        feature::unemitted_actions::<RearCam, Always>(),
+        verify::unemitted_actions::<Always>(),
         Vec::<OverlayAction>::new()
     );
     // `Shared` emits both of `CamAction`'s variants; `Idle` emits neither.
     assert_eq!(
-        feature::unemitted_actions::<RearCam, Idle>(),
+        verify::unemitted_actions::<Idle>(),
         vec![CamAction::ShowCamera, CamAction::HideCamera]
     );
 }
@@ -1582,7 +1589,8 @@ use elsewhere::SpeedBelowLimit as Other;
 /// answer.
 struct Colliding;
 
-impl Feature<RearCam> for Colliding {
+impl Feature for Colliding {
+    type Domain = RearCam;
     type Action = OverlayAction;
 
     const NAME: &'static str = "Colliding";
@@ -1651,7 +1659,8 @@ fn duplicate_node_names_spans_features_and_machines() {
 /// Names only `elsewhere`'s node, so it is clean on its own.
 struct Colliding2;
 
-impl Feature<RearCam> for Colliding2 {
+impl Feature for Colliding2 {
+    type Domain = RearCam;
     type Action = OverlayAction;
 
     const NAME: &'static str = "Colliding2";
