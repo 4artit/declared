@@ -55,7 +55,7 @@ pub struct Mirrors;
 impl Domain for Mirrors {
     type Event = Event;
     type EventKind = Kind;
-    type Env = World;
+    type World = World;
 }
 
 // ─────────────────────────────────────────── router

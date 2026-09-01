@@ -68,13 +68,13 @@ enum Action { Click }
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 enum StateAction { TurnOn, TurnOff }
 
-struct Env;
+struct World;
 struct Light;
 
 impl Domain for Light {
     type Event = Event;
     type EventKind = Kind;
-    type Env = Env;
+    type World = World;
 }
 
 impl MachineSpec for Light {
@@ -89,13 +89,13 @@ impl MachineSpec for Light {
     const EDGES: &'static [Edge<Light>] = EDGES;
     const IGNORES: &'static [Ignore<Light>] = IGNORES;
 
-    fn perform(action: Action, _ev: &Event, _world: &mut Env) {
+    fn perform(action: Action, _ev: &Event, _world: &mut World) {
         match action {
             Action::Click => println!("click"),
         }
     }
 
-    fn perform_state(action: StateAction, _world: &mut Env) {
+    fn perform_state(action: StateAction, _world: &mut World) {
         match action {
             StateAction::TurnOn => println!("on"),
             StateAction::TurnOff => println!("off"),
@@ -120,7 +120,7 @@ static EDGES: &[Edge<Light>] = &[
 static IGNORES: &[Ignore<Light>] = &[];
 
 fn main() {
-    let mut world = Env;
+    let mut world = World;
     // 상태 기계는 시작하는 게 아니라 재개한다. `Tag::Off`는 전등이 이미
     // 꺼져 있다는 뜻이므로 `Off`의 진입 동작은 여기서 실행되지 않는다.
     let mut m = Machine::<Light>::new(Tag::Off);

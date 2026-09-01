@@ -9,7 +9,7 @@ pub use state::State;
 use alloc::vec::Vec;
 
 use crate::guard::{Cx, Memo};
-use crate::{ActionOf, EnvOf, EventOf, HasKind, KindOf, MachineSpec, StateActionOf};
+use crate::{ActionOf, WorldOf, EventOf, HasKind, KindOf, MachineSpec, StateActionOf};
 
 /// The outcome of one [`dispatch`] call, for tests and logs.
 ///
@@ -81,8 +81,8 @@ impl<M: MachineSpec> Machine<M> {
     /// Builds a machine and validates `M`'s tables.
     ///
     /// - `initial`: the state the world is already in, which the caller keeps
-    ///   consistent with `Env`. A machine resumes rather than starts, so its
-    ///   [`State::entry`] does not run and this call does not touch `Env`. It
+    ///   consistent with `World`. A machine resumes rather than starts, so its
+    ///   [`State::entry`] does not run and this call does not touch `World`. It
     ///   is an argument rather than another const for that reason.
     ///
     /// Returns the constructed machine.
@@ -150,7 +150,7 @@ impl<M: MachineSpec> Machine<M> {
     fn select(
         &self,
         ev: &EventOf<M::Domain>,
-        world: &EnvOf<M::Domain>,
+        world: &WorldOf<M::Domain>,
         kind: KindOf<M::Domain>,
     ) -> Selected {
         let memo = Memo::new();
@@ -188,14 +188,14 @@ impl<M: MachineSpec> Machine<M> {
     }
 
     /// Runs each of an edge's actions in order.
-    fn perform_all(to_run: &[ActionOf<M>], ev: &EventOf<M::Domain>, world: &mut EnvOf<M::Domain>) {
+    fn perform_all(to_run: &[ActionOf<M>], ev: &EventOf<M::Domain>, world: &mut WorldOf<M::Domain>) {
         for &a in to_run {
             M::perform(a, ev, world);
         }
     }
 
     /// Runs each of a state's entry or exit actions in order.
-    fn perform_state_all(to_run: &[StateActionOf<M>], world: &mut EnvOf<M::Domain>) {
+    fn perform_state_all(to_run: &[StateActionOf<M>], world: &mut WorldOf<M::Domain>) {
         for &a in to_run {
             M::perform_state(a, world);
         }
@@ -211,7 +211,7 @@ impl<M: MachineSpec> Machine<M> {
 ///
 /// Returns the [`Taken`] transition, or `None` if no edge matched (a warning is
 /// logged unless the combination is covered by an [`Ignore`]). The return value
-/// is for tests and logs; a caller that reads its effects out of `Env` can drop
+/// is for tests and logs; a caller that reads its effects out of `World` can drop
 /// it, which makes the call read like [`crate::feature::AnyFeature::dispatch`].
 ///
 /// Effects run in this order: the current state's [`State::exit`] → the tag
@@ -225,7 +225,7 @@ impl<M: MachineSpec> Machine<M> {
 pub fn dispatch<M: MachineSpec>(
     m: &mut Machine<M>,
     ev: &EventOf<M::Domain>,
-    world: &mut EnvOf<M::Domain>,
+    world: &mut WorldOf<M::Domain>,
 ) -> Option<Taken<M>> {
     let kind = ev.kind();
 

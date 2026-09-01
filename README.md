@@ -71,13 +71,13 @@ enum Action { Click }
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 enum StateAction { TurnOn, TurnOff }
 
-struct Env;
+struct World;
 struct Light;
 
 impl Domain for Light {
     type Event = Event;
     type EventKind = Kind;
-    type Env = Env;
+    type World = World;
 }
 
 impl MachineSpec for Light {
@@ -92,13 +92,13 @@ impl MachineSpec for Light {
     const EDGES: &'static [Edge<Light>] = EDGES;
     const IGNORES: &'static [Ignore<Light>] = IGNORES;
 
-    fn perform(action: Action, _ev: &Event, _world: &mut Env) {
+    fn perform(action: Action, _ev: &Event, _world: &mut World) {
         match action {
             Action::Click => println!("click"),
         }
     }
 
-    fn perform_state(action: StateAction, _world: &mut Env) {
+    fn perform_state(action: StateAction, _world: &mut World) {
         match action {
             StateAction::TurnOn => println!("on"),
             StateAction::TurnOff => println!("off"),
@@ -123,7 +123,7 @@ static EDGES: &[Edge<Light>] = &[
 static IGNORES: &[Ignore<Light>] = &[];
 
 fn main() {
-    let mut world = Env;
+    let mut world = World;
     // A machine resumes rather than starts: `Tag::Off` says the lamp is
     // already off, so `Off`'s entry action does not run here.
     let mut m = Machine::<Light>::new(Tag::Off);

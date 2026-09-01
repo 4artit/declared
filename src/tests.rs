@@ -51,7 +51,7 @@ impl Enumerable for Action {
 }
 
 #[derive(Default)]
-struct Env {
+struct World {
     /// `None` models a failed lookup, which yields `Cond::Unknown`.
     speed: Option<f32>,
     camera_visible: bool,
@@ -60,7 +60,7 @@ struct Env {
     /// `ev` argument. Entry and exit add nothing: `perform_state` has no event.
     performed_for: Vec<Kind>,
     /// How many times `SpeedBelowLimit` looked the speed up. Guards receive
-    /// `&Env`, so this needs interior mutability.
+    /// `&World`, so this needs interior mutability.
     speed_lookups: Cell<u32>,
 }
 
@@ -69,13 +69,13 @@ struct RearCam;
 impl Domain for RearCam {
     type Event = Event;
     type EventKind = Kind;
-    type Env = Env;
+    type World = World;
 }
 
 /// Every owner in this fixture runs its effects the same way, so they all point
 /// here. Splitting effects per owner is what the example does; the tests are
 /// about dispatch, not about who owns what.
-fn perform_action(action: Action, world: &mut Env) {
+fn perform_action(action: Action, world: &mut World) {
     world.performed.push(action);
     match action {
         Action::ShowCamera => world.camera_visible = true,
@@ -86,7 +86,7 @@ fn perform_action(action: Action, world: &mut Env) {
 
 /// Records the kind the action was performed for, which only an event-carrying
 /// action can do.
-fn perform_for_event(action: Action, ev: &Event, world: &mut Env) {
+fn perform_for_event(action: Action, ev: &Event, world: &mut World) {
     world.performed_for.push(ev.kind());
     perform_action(action, world);
 }
@@ -98,7 +98,7 @@ impl MachineSpec for RearCam {
     type Tag = Tag;
     // This machine's edges and its states drive the same effects, so both of
     // its vocabularies are the one `Action` enum. The features below declare
-    // their own; `Env` is what they all end up speaking to.
+    // their own; `World` is what they all end up speaking to.
     type Action = Action;
     type StateAction = Action;
 
@@ -106,11 +106,11 @@ impl MachineSpec for RearCam {
     const EDGES: &'static [Edge<RearCam>] = EDGES;
     const IGNORES: &'static [Ignore<RearCam>] = IGNORES;
 
-    fn perform(action: Action, ev: &Event, world: &mut Env) {
+    fn perform(action: Action, ev: &Event, world: &mut World) {
         perform_for_event(action, ev, world);
     }
 
-    fn perform_state(action: Action, world: &mut Env) {
+    fn perform_state(action: Action, world: &mut World) {
         perform_action(action, world);
     }
 }
@@ -206,9 +206,9 @@ fn off() -> Machine<RearCam> {
     Machine::new(Tag::Off)
 }
 
-fn showing() -> (Machine<RearCam>, Env) {
+fn showing() -> (Machine<RearCam>, World) {
     let mut m = off();
-    let mut w = Env {
+    let mut w = World {
         speed: Some(10.0),
         ..Default::default()
     };
@@ -224,7 +224,7 @@ fn showing() -> (Machine<RearCam>, Env) {
 #[test]
 fn enters_showing_and_runs_entry_action() {
     let mut m = off();
-    let mut w = Env {
+    let mut w = World {
         speed: Some(10.0),
         ..Default::default()
     };
@@ -245,7 +245,7 @@ fn enters_showing_and_runs_entry_action() {
 #[test]
 fn the_initial_state_is_resumed_not_entered() {
     // The world arrives with the camera already on.
-    let mut w = Env {
+    let mut w = World {
         speed: Some(10.0),
         camera_visible: true,
         ..Default::default()
@@ -265,7 +265,7 @@ fn the_initial_state_is_resumed_not_entered() {
 #[test]
 fn taken_is_debug_clone_and_eq() {
     let mut m = off();
-    let mut w = Env {
+    let mut w = World {
         speed: Some(10.0),
         ..Default::default()
     };
@@ -331,7 +331,7 @@ fn exit_action_runs_on_leaving() {
 #[test]
 fn exit_and_entry_actions_run_in_order_across_a_round_trip() {
     let mut m = off();
-    let mut w = Env {
+    let mut w = World {
         speed: Some(10.0),
         ..Default::default()
     };
@@ -359,7 +359,7 @@ fn internal_transition_skips_exit_and_entry() {
 #[test]
 fn unknown_denies_transition_when_policy_is_deny() {
     let mut m = off();
-    let mut w = Env {
+    let mut w = World {
         speed: None, // failed lookup -> SpeedBelowLimit = Unknown
         ..Default::default()
     };
@@ -399,7 +399,7 @@ fn declaration_order_is_priority() {
 #[test]
 fn declared_ignore_is_not_a_hole() {
     let mut m = off();
-    let mut w = Env::default();
+    let mut w = World::default();
 
     assert!(machine::dispatch(&mut m, &Event::PowerChanged, &mut w).is_none());
     assert_eq!(m.tag(), Tag::Off);
@@ -451,7 +451,7 @@ fn caller_side_queue_processes_events_in_order() {
     use std::collections::VecDeque;
 
     let mut m = off();
-    let mut w = Env {
+    let mut w = World {
         speed: Some(10.0),
         ..Default::default()
     };
@@ -524,7 +524,7 @@ fn render_parenthesises_negated_subexpressions() {
 /// `check!()` with no arguments. An edge with no guard is always taken.
 #[test]
 fn always_is_true_renders_empty_and_references_no_nodes() {
-    let w = Env::default();
+    let w = World::default();
     let ev = Event::PowerChanged;
     let memo = Memo::new();
     let cx: Cx<'_, RearCam> = Cx::new(&ev, &w, &memo);
@@ -552,7 +552,7 @@ fn or_short_circuits_on_true() {
     assert_eq!(ids.len(), 2);
 
     // Left is True, so the speed is never looked up.
-    let w = Env {
+    let w = World {
         speed: None,
         ..Default::default()
     };
@@ -571,7 +571,7 @@ fn or_short_circuits_on_true() {
 /// A `False` on the left settles an `And`, so the right operand is skipped.
 #[test]
 fn and_short_circuits_on_false() {
-    let w = Env {
+    let w = World {
         speed: None,
         ..Default::default()
     };
@@ -647,7 +647,7 @@ struct PartialCam;
 impl Domain for PartialCam {
     type Event = Event;
     type EventKind = Kind;
-    type Env = Env;
+    type World = World;
 }
 
 impl MachineSpec for PartialCam {
@@ -658,8 +658,8 @@ impl MachineSpec for PartialCam {
     type Action = Action;
     type StateAction = Action;
 
-    fn perform(_action: Action, _ev: &Event, _world: &mut Env) {}
-    fn perform_state(_action: Action, _world: &mut Env) {}
+    fn perform(_action: Action, _ev: &Event, _world: &mut World) {}
+    fn perform_state(_action: Action, _world: &mut World) {}
 
     const STATES: &'static [State<PartialCam>] = PARTIAL_STATES;
     const EDGES: &'static [Edge<PartialCam>] = PARTIAL_EDGES;
@@ -850,11 +850,11 @@ impl MachineSpec for ChainSm {
     const EDGES: &'static [Edge<ChainSm>] = CHAIN_EDGES;
     const IGNORES: &'static [Ignore<ChainSm>] = &[];
 
-    fn perform(action: Action, ev: &Event, world: &mut Env) {
+    fn perform(action: Action, ev: &Event, world: &mut World) {
         perform_for_event(action, ev, world);
     }
 
-    fn perform_state(action: Action, world: &mut Env) {
+    fn perform_state(action: Action, world: &mut World) {
         perform_action(action, world);
     }
 }
@@ -917,7 +917,7 @@ struct Broken;
 impl Domain for Broken {
     type Event = Event;
     type EventKind = Kind;
-    type Env = Env;
+    type World = World;
 }
 
 impl MachineSpec for Broken {
@@ -928,8 +928,8 @@ impl MachineSpec for Broken {
     type Action = Action;
     type StateAction = Action;
 
-    fn perform(_action: Action, _ev: &Event, _world: &mut Env) {}
-    fn perform_state(_action: Action, _world: &mut Env) {}
+    fn perform(_action: Action, _ev: &Event, _world: &mut World) {}
+    fn perform_state(_action: Action, _world: &mut World) {}
 
     const STATES: &'static [State<Broken>] = BROKEN_STATES;
     const EDGES: &'static [Edge<Broken>] = BROKEN_EDGES;
@@ -1113,7 +1113,7 @@ fn internal_table_dashes_an_empty_guard() {
 // nodes are the ones the machine above uses, which is the point of declaring
 // them against the domain.
 //
-// Each fixture names its own action type. They all speak to `Env` through the
+// Each fixture names its own action type. They all speak to `World` through the
 // same helpers, because the world has one language even when its callers do
 // not.
 
@@ -1153,7 +1153,7 @@ impl Feature for Camera {
         },
     ];
 
-    fn perform(action: CamAction, ev: &Event, world: &mut Env) {
+    fn perform(action: CamAction, ev: &Event, world: &mut World) {
         perform_for_event(
             match action {
                 CamAction::ShowCamera => Action::ShowCamera,
@@ -1190,7 +1190,7 @@ impl Feature for Overlay {
         emit: &[OverlayAction::UpdateOverlay],
     }];
 
-    fn perform(action: OverlayAction, ev: &Event, world: &mut Env) {
+    fn perform(action: OverlayAction, ev: &Event, world: &mut World) {
         match action {
             OverlayAction::UpdateOverlay => perform_for_event(Action::UpdateOverlay, ev, world),
         }
@@ -1201,7 +1201,7 @@ static CAMERA_FEATURES: &[&dyn AnyFeature<RearCam>] = &[&Camera, &Overlay];
 
 #[test]
 fn dispatch_runs_only_the_declared_kinds() {
-    let mut w = Env::default();
+    let mut w = World::default();
 
     // Declared: a rule matches and dispatch carries its effect out.
     Camera.dispatch(&Event::GearChanged(Gear::Reverse), &mut w);
@@ -1218,7 +1218,7 @@ fn dispatch_runs_only_the_declared_kinds() {
 /// the way an edge's `run` actions can.
 #[test]
 fn dispatch_performs_with_the_event_that_caused_it() {
-    let mut w = Env::default();
+    let mut w = World::default();
 
     Camera.dispatch(&Event::GearChanged(Gear::Drive), &mut w);
 
@@ -1230,7 +1230,7 @@ fn dispatch_performs_with_the_event_that_caused_it() {
 /// it never runs.
 #[test]
 fn dispatch_takes_the_first_rule_that_matches() {
-    let mut w = Env::default();
+    let mut w = World::default();
 
     Camera.dispatch(&Event::GearChanged(Gear::Reverse), &mut w);
 
@@ -1240,7 +1240,7 @@ fn dispatch_takes_the_first_rule_that_matches() {
 /// An unguarded rule below a guarded one is the `else` branch.
 #[test]
 fn dispatch_falls_through_to_an_unguarded_rule() {
-    let mut w = Env::default();
+    let mut w = World::default();
 
     Camera.dispatch(&Event::GearChanged(Gear::Drive), &mut w);
 
@@ -1251,7 +1251,7 @@ fn dispatch_falls_through_to_an_unguarded_rule() {
 /// nothing below it matches either.
 #[test]
 fn dispatch_denies_an_undecidable_guard() {
-    let mut w = Env::default();
+    let mut w = World::default();
 
     Overlay.dispatch(&Event::SpeedChanged, &mut w);
 
@@ -1275,14 +1275,14 @@ impl Feature for Optimist {
         emit: &[OverlayAction::UpdateOverlay],
     }];
 
-    fn perform(action: OverlayAction, ev: &Event, world: &mut Env) {
+    fn perform(action: OverlayAction, ev: &Event, world: &mut World) {
         Overlay::perform(action, ev, world);
     }
 }
 
 #[test]
 fn dispatch_allows_an_undecidable_guard_when_told_to() {
-    let mut w = Env::default();
+    let mut w = World::default();
 
     Optimist.dispatch(&Event::SpeedChanged, &mut w);
 
@@ -1316,14 +1316,14 @@ impl Feature for Shared {
         },
     ];
 
-    fn perform(action: CamAction, ev: &Event, world: &mut Env) {
+    fn perform(action: CamAction, ev: &Event, world: &mut World) {
         Camera::perform(action, ev, world);
     }
 }
 
 #[test]
 fn dispatch_evaluates_a_shared_node_once() {
-    let mut w = Env {
+    let mut w = World {
         speed: Some(10.0),
         ..Default::default()
     };
@@ -1363,7 +1363,7 @@ impl Feature for Noisy {
         },
     ];
 
-    fn perform(action: CamAction, ev: &Event, world: &mut Env) {
+    fn perform(action: CamAction, ev: &Event, world: &mut World) {
         Camera::perform(action, ev, world);
     }
 }
@@ -1409,7 +1409,7 @@ impl Feature for Idle {
 
     const RULES: &'static [Rule<RearCam, CamAction>] = &[];
 
-    fn perform(action: CamAction, ev: &Event, world: &mut Env) {
+    fn perform(action: CamAction, ev: &Event, world: &mut World) {
         Camera::perform(action, ev, world);
     }
 }
@@ -1464,7 +1464,7 @@ impl Feature for Always {
         emit: &[OverlayAction::UpdateOverlay],
     }];
 
-    fn perform(action: OverlayAction, ev: &Event, world: &mut Env) {
+    fn perform(action: OverlayAction, ev: &Event, world: &mut World) {
         Overlay::perform(action, ev, world);
     }
 }
@@ -1629,7 +1629,7 @@ impl Feature for Colliding {
         },
     ];
 
-    fn perform(action: OverlayAction, ev: &Event, world: &mut Env) {
+    fn perform(action: OverlayAction, ev: &Event, world: &mut World) {
         Overlay::perform(action, ev, world);
     }
 }
@@ -1692,7 +1692,7 @@ impl Feature for Colliding2 {
         emit: &[OverlayAction::UpdateOverlay],
     }];
 
-    fn perform(action: OverlayAction, ev: &Event, world: &mut Env) {
+    fn perform(action: OverlayAction, ev: &Event, world: &mut World) {
         Overlay::perform(action, ev, world);
     }
 }
@@ -1715,7 +1715,7 @@ fn guard_nodes_keeps_repeat_references() {
 /// the second rule never evaluates its own guard.
 #[test]
 fn a_shared_name_makes_the_second_node_inherit_the_first_answer() {
-    let mut w = Env {
+    let mut w = World {
         // `SpeedBelowLimit` is False here; `elsewhere`'s node is always True,
         // so rule two would emit if it were the one being asked.
         speed: Some(200.0),
@@ -1739,7 +1739,7 @@ fn a_shared_name_makes_the_second_node_inherit_the_first_answer() {
 /// Only the id, since this arrives through `&dyn AnyFeature`.
 #[test]
 fn feature_dispatch_returns_the_rule_that_ran() {
-    let mut w = Env::default();
+    let mut w = World::default();
 
     assert_eq!(
         Camera.dispatch(&Event::GearChanged(Gear::Reverse), &mut w),
@@ -1773,7 +1773,7 @@ fn duplicate_rule_ids_reports_a_repeat_across_features() {
             unknown: OnUnknown::Deny,
             emit: &[CamAction::ShowCamera],
         }];
-        fn perform(action: CamAction, ev: &Event, world: &mut Env) {
+        fn perform(action: CamAction, ev: &Event, world: &mut World) {
             Camera::perform(action, ev, world);
         }
     }
@@ -1789,7 +1789,7 @@ fn duplicate_rule_ids_reports_a_repeat_across_features() {
 #[test]
 fn a_declining_guard_is_not_a_missing_row() {
     let mut m = off();
-    let mut w = Env::default();
+    let mut w = World::default();
 
     // Drive, so `GearIsReverse` is false and `CAM_ON` declines.
     assert!(machine::dispatch(&mut m, &Event::GearChanged(Gear::Drive), &mut w).is_none());

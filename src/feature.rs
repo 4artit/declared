@@ -20,7 +20,7 @@ use alloc::vec::Vec;
 use core::any::TypeId;
 
 use crate::guard::{Cx, Expr, Memo, OnUnknown};
-use crate::{Domain, EnvOf, EventOf, HasKind, KindOf};
+use crate::{Domain, WorldOf, EventOf, HasKind, KindOf};
 
 /// One rule of a feature: when it is considered, what must hold, and what it
 /// emits.
@@ -72,7 +72,7 @@ pub trait Feature: Sync + 'static {
     const RULES: &'static [Rule<Self::Domain, Self::Action>];
 
     /// Carries out one of this feature's actions — the only place it may mutate
-    /// the world, since guards see `&Env`.
+    /// the world, since guards see `&World`.
     ///
     /// - `action`: the effect to carry out.
     /// - `ev`: the event being dispatched, for effects that need a runtime
@@ -81,7 +81,7 @@ pub trait Feature: Sync + 'static {
     fn perform(
         action: Self::Action,
         ev: &EventOf<Self::Domain>,
-        world: &mut EnvOf<Self::Domain>,
+        world: &mut WorldOf<Self::Domain>,
     );
 }
 
@@ -143,7 +143,7 @@ pub trait AnyFeature<D: Domain>: Sync {
     /// - `world`: the outside world, read by the guards and mutated by the
     ///   actions.
     ///
-    /// Guards only ever see `&Env` ([`Cx::world`]), so the only way a feature
+    /// Guards only ever see `&World` ([`Cx::world`]), so the only way a feature
     /// reaches the world is through [`Rule::emit`] and the
     /// [`Feature::perform`] it is handed to — which is why [`AnyFeature::emits`]
     /// can be trusted as the whole truth.
@@ -154,7 +154,7 @@ pub trait AnyFeature<D: Domain>: Sync {
     /// Actions run before this returns, so a feature's effects land in `world`
     /// before the next feature is dispatched. Two features whose rules cover the
     /// same kind therefore see each other, in the order the caller walks them.
-    fn dispatch(&self, ev: &EventOf<D>, world: &mut EnvOf<D>) -> Option<&'static str>;
+    fn dispatch(&self, ev: &EventOf<D>, world: &mut WorldOf<D>) -> Option<&'static str>;
 }
 
 impl<F: Feature> AnyFeature<F::Domain> for F {
@@ -203,7 +203,7 @@ impl<F: Feature> AnyFeature<F::Domain> for F {
     fn dispatch(
         &self,
         ev: &EventOf<F::Domain>,
-        world: &mut EnvOf<F::Domain>,
+        world: &mut WorldOf<F::Domain>,
     ) -> Option<&'static str> {
         let kind = ev.kind();
 

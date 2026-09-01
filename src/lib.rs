@@ -77,7 +77,7 @@ pub use enums::{Enumerable, HasKind};
 /// impl Domain for Light {
 ///     type Event = Event;
 ///     type EventKind = Kind;
-///     type Env = ();
+///     type World = ();
 /// }
 /// ```
 pub mod prelude {
@@ -105,8 +105,8 @@ pub trait Domain: Sized + 'static {
     type EventKind: Enumerable;
 
     /// The outside world this controller reads and changes (APIs, storage).
-    /// `?Sized` so a trait object can narrow it, e.g. `type Env = dyn Foo`.
-    type Env: ?Sized;
+    /// `?Sized` so a trait object can narrow it, e.g. `type World = dyn Foo`.
+    type World: ?Sized;
 
     /// The event kinds [`verify::coverage`] walks. Defaults to
     /// [`Enumerable::ALL`]; override only to check a subset. It scopes the
@@ -133,7 +133,7 @@ pub trait Domain: Sized + 'static {
 /// # impl chart::Domain for Dom {
 /// #     type Event = Event;
 /// #     type EventKind = Kind;
-/// #     type Env = ();
+/// #     type World = ();
 /// # }
 /// # pub struct Sm;
 /// use chart::NoAction;
@@ -209,7 +209,7 @@ pub trait MachineSpec: Sized + 'static {
     /// Carries out one action this machine's edges run.
     ///
     /// With [`MachineSpec::perform_state`], the only place this machine may
-    /// mutate `Env` — guards only ever see `&Env`.
+    /// mutate `World` — guards only ever see `&World`.
     ///
     /// - `action`: the effect to carry out.
     /// - `ev`: the event being dispatched, for actions that need a runtime
@@ -218,7 +218,7 @@ pub trait MachineSpec: Sized + 'static {
     fn perform(
         action: ActionOf<Self>,
         ev: &EventOf<Self::Domain>,
-        world: &mut EnvOf<Self::Domain>,
+        world: &mut WorldOf<Self::Domain>,
     );
 
     /// Carries out one entry or exit effect. No event: see
@@ -226,7 +226,7 @@ pub trait MachineSpec: Sized + 'static {
     ///
     /// - `action`: the effect to carry out.
     /// - `world`: the outside world to mutate.
-    fn perform_state(action: Self::StateAction, world: &mut EnvOf<Self::Domain>);
+    fn perform_state(action: Self::StateAction, world: &mut WorldOf<Self::Domain>);
 
     /// The states [`verify::coverage`] walks. Defaults to [`Enumerable::ALL`];
     /// override only to check a subset. It scopes the check alone — dispatch
@@ -245,7 +245,7 @@ pub type EventOf<D> = <D as Domain>::Event;
 /// The event kind type of domain `D`.
 pub type KindOf<D> = <D as Domain>::EventKind;
 /// The world type of domain `D`.
-pub type EnvOf<D> = <D as Domain>::Env;
+pub type WorldOf<D> = <D as Domain>::World;
 
 /// The action type of machine `M`. Its own, not its domain's: effects belong to
 /// whoever emits them, and a feature names [`feature::Feature::Action`] instead.

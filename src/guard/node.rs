@@ -33,12 +33,12 @@ pub struct Cx<'a, D: Domain> {
     /// The event, including payload.
     pub event: &'a D::Event,
     /// The outside world, read-only.
-    pub world: &'a D::Env,
+    pub world: &'a D::World,
     memo: &'a Memo,
 }
 
 impl<'a, D: Domain> Cx<'a, D> {
-    pub fn new(event: &'a D::Event, world: &'a D::Env, memo: &'a Memo) -> Self {
+    pub fn new(event: &'a D::Event, world: &'a D::World, memo: &'a Memo) -> Self {
         Self { event, world, memo }
     }
 }
@@ -152,7 +152,7 @@ impl<D: Domain> Expr<D> {
 /// # impl chart::Domain for RearCam {
 /// #     type Event = Event;
 /// #     type EventKind = Kind;
-/// #     type Env = ();
+/// #     type World = ();
 /// # }
 /// chart::cond_node!(RearCam, GearIsReverse, |cx| match cx.event {
 ///     Event::GearChanged(g) => Cond::from(*g == Gear::Reverse),
