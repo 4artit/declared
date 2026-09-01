@@ -1,53 +1,39 @@
 # declared
 
 A declarative controller framework for Rust. You describe what a controller
-reacts to and what it does about it as static data — a state table, or a
-simple list of inputs and outputs — and that single declaration drives the
-runtime, generates a mermaid diagram, and gets checked for gaps.
+reacts to and what it does about it as static data, and that one declaration
+drives the runtime, the diagram, and the gap check.
 
 [한국어 문서](README_KR.md)
 
-## Why
+## Purpose
 
-Controller logic tends to spread across `match` arms until "what happens when
-X arrives" can only be answered by reading the whole file, and the diagram
-someone drew for it slowly stops matching reality. declared flips that: the
-transition table (or feature list) *is* the source of truth, so the diagram
-and the exhaustive coverage check are generated from the exact data the
-executor runs. There's nothing to keep in sync because there's only one copy.
+Spread controller logic across `match` arms and "what happens when this event
+arrives" can only be answered by reading the whole file. Meanwhile the diagram
+someone drew for it slowly stops matching reality.
 
-## Two layers, one vocabulary
+`declared` makes the table the source. The diagram and the checks are generated
+from the exact data the executor runs, so there is no second copy to keep in
+sync.
 
-| Layer | Use when | You declare |
-|---|---|---|
-| `feature` | behavior doesn't depend on history | each feature's events in, actions out |
-| `machine` | the same event means different things in different states | a transition table |
-
-Both layers share a `Domain` — the events, actions, and outside-world type a
-controller works with — so a stateless feature that later needs history
-doesn't change; you just add a small `MachineSpec` next to it. Most
-controllers are mostly `feature`, with a `machine` where it's actually needed.
-
-Every declaration file imports `declared::prelude::*` — the traits, the row types
-and the guard vocabulary in one line. The executors stay out of it, so
-`machine::dispatch` still says where it comes from.
-
-## Install
-
-Not published to crates.io — use it as a path dependency.
-
-```toml
-[dependencies]
-declared = { path = "../fsm" }
+```mermaid
+flowchart LR
+    D["declaration<br/>STATES · EDGES · RULES"]
+    D --> R["run<br/>machine::dispatch"]
+    D --> G["diagram<br/>render::state_diagram"]
+    D --> V["gap check<br/>verify::coverage"]
 ```
 
-The crate is `no_std`. Dispatch, guard evaluation and the tables they read
-allocate nothing; `alloc` is needed only by what reports on a controller rather
-than runs it — `render`'s documents and `verify`'s findings.
+### Two layers
 
-```sh
-cargo build --lib --target thumbv7em-none-eabihf   # builds bare-metal
-```
+Two layers share one vocabulary (`Domain`); take whichever a controller needs.
+
+- **`feature`** — when behavior does not depend on history. Declare the events it takes and the actions it emits.
+- **`machine`** — when the same event means different things in different states. Declare a transition table.
+
+Because they share a `Domain`, a stateless feature that later needs history
+keeps its declaration and gains a `MachineSpec` beside it. A declaration file
+imports one line: `use declared::prelude::*;`.
 
 ## Quick start
 
@@ -133,66 +119,39 @@ fn main() {
 ```
 
 Bigger examples:
-- [`examples/door_lock`](examples/door_lock/main.rs) — four states, guard
-  conditions, `Ignore` with wildcard sources. `cargo run --example door_lock`.
-- [`examples/mirrors`](examples/mirrors/main.rs) — a controller mixing both
-  layers: two stateless features next to one state machine.
-  `cargo run --example mirrors`.
 
-## What you get for declaring instead of coding
+- [`examples/door_lock`](examples/door_lock/main.rs) — four states, guard conditions, `Ignore` with wildcard sources
+- [`examples/mirrors`](examples/mirrors/main.rs) — a controller mixing both layers: two stateless features next to one state machine
 
-- **A runtime.** `machine::dispatch` (or `feature::dispatch`) reads the same
-  table you wrote — no separate interpretation step to fall out of sync.
-- **A diagram.** `render::state_diagram` turns the transition table into a
-  `stateDiagram-v2` you can drop straight into docs, or convert to PlantUML
-  with `scripts/mermaid_to_plantuml.sh`.
-- **A gap check.** `verify::coverage` walks every `(state, event)`
-  combination and reports the ones with no edge and no declared `Ignore`.
-  Assert `is_clean()` in a test, and a forgotten case fails CI instead of
-  surfacing in production.
-- **One definition per condition.** A guard is declared against the `Domain`,
-  so "power is on" is one node shared by every table rather than one per table.
-  Node names are unique per domain: `verify::duplicate_node_names` reads the
-  features and the machines together and reports two node types sharing a name.
-- **Guards that admit failure.** Conditions evaluate to `True`/`False`/
-  `Unknown` instead of `bool`, and `Edge::unknown` names the fail-open or
-  fail-closed policy explicitly — it shows up on the diagram instead of
-  hiding inside a guard function.
-- **Traceable side effects.** A `perform` is the only place the outside world is
-  touched, so every effect a dispatch produced is a plain value you can log or
-  assert on. Every row carries an id — `Edge::id`, `Rule::id` — and both
-  layers' `dispatch` hands back the one that ran.
-- **Effects belong to whoever emits them.** Each feature and each machine names
-  its own action type — `Feature::Action`, `MachineSpec::Action` — so every
-  `perform` is exhaustive over exactly the effects its own file declares. Adding
-  one is a compile error there and nowhere else, and no file collects effects
-  belonging to another. `Domain` holds only what the parts really share: the
-  events and the world.
-- **Entry effects that cannot read the event.** Entry and exit run whichever
-  edge led there, so they have their own vocabulary, `MachineSpec::StateAction`,
-  and `perform_state` is handed no event — an effect that needs one goes on an
-  edge. It lives on the machine because only a machine has states.
+## What it buys you
 
-## Project layout
+- **The table is the running code**
+  - `machine::dispatch` and `feature::dispatch` read the table you wrote.
+  - There is no separate interpretation step to fall out of sync with it.
 
-```
-src/
-  lib.rs          // Domain, MachineSpec — library entry points
-  guard.rs        // shared by both layers: Cond, OnUnknown
-  guard/          // CondNode, Cx, Memo, Expr
-  feature.rs      // stateless layer: Feature, Rule, AnyFeature
-  machine.rs      // stateful layer: Machine, dispatch, Taken
-  machine/        // State, Edge, Source, Goto, Ignore
-  verify.rs       // coverage, duplicate_node_names, unhandled_kinds, ...
-  render.rs       // state_diagram, io_flowchart, *_table
-examples/
-  door_lock/      // cargo run --example door_lock
-  mirrors/        // cargo run --example mirrors
-```
+- **A forgotten case fails CI, not production**
+  - `verify::coverage` walks every `(state × event)` pair and reports the ones with no edge and no `Ignore`.
+  - Assert `is_clean()` in a test and the gap stops the build.
 
-Full API details (the `Domain`/`MachineSpec` contract, guard authoring,
-dispatch order, etc.) are documented on the types themselves — run
-`cargo doc --open`.
+- **One definition per condition**
+  - A guard is declared against the `Domain`, so "power is on" is one node the whole controller shares.
+  - Node names are unique per domain, and `verify::duplicate_node_names` checks it across features and machines together.
+
+- **Undecidable is not hidden**
+  - Conditions evaluate to `True`/`False`/`Unknown` rather than `bool`.
+  - The fail-open or fail-closed policy is named by `Edge::unknown` and shows up on the diagram instead of inside a guard function.
+
+- **Effects are traceable**
+  - `perform` is the only place the outside world is touched, so every effect a dispatch produced is a plain value you can log or assert on.
+  - Every row carries an id (`Edge::id`, `Rule::id`), and both layers' `dispatch` returns the one that ran.
+
+- **Effects belong to whoever emits them**
+  - Each feature and each machine names its own action type, so every `perform` is exhaustive over exactly the effects its own file declares. Adding one is a compile error there and nowhere else.
+  - Entry and exit run whichever edge led there, so they use a separate vocabulary, `StateAction`, and `perform_state` gets no event. An effect that needs one goes on an edge.
+
+- **It is `no_std`**
+  - Runs on `core` alone; dispatch and guard evaluation touch no heap.
+  - `alloc` is needed only by `render` and `verify` — what reports on a controller rather than runs it.
 
 ## Tests
 
@@ -202,6 +161,6 @@ cargo run --example door_lock          # checks examples/door_lock/door_lock.md
 cargo run --example mirrors            # checks examples/mirrors/mirrors.md
 ```
 
-Each example regenerates its document and compares it with the committed
-`.md`, failing on drift — those files are `render`'s tests. After an intended
-change, pass `-- --write` to regenerate.
+Each example regenerates its document and compares it with the committed `.md`,
+failing on drift — those files are `render`'s tests. After an intended change,
+pass `-- --write` to regenerate.

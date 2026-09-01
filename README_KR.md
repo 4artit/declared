@@ -1,54 +1,42 @@
 # declared
 
-선언형 컨트롤러 프레임워크. 컨트롤러가 무엇에 반응하고 무엇을 하는지를
-정적 데이터(상태 전이 표, 또는 단순한 입출력 목록)로 선언하면, 그 선언
-하나가 실행·mermaid 다이어그램·전수 누락 검사를 모두 만들어낸다.
+선언형 컨트롤러 프레임워크입니다. 컨트롤러가 무엇에 반응하고 무엇을 하는지를
+정적 데이터로 선언하면, 그 선언 하나가 실행기와 다이어그램과 누락 검사를
+만들어냅니다.
 
 [English README](README.md)
 
-## 왜 선언인가
+## 목적
 
-로직을 `match` 문에 흩어 두면 "이 이벤트가 오면 무슨 일이 일어나는가"를
-파악하려고 코드를 전부 읽어야 하고, 누군가 그려둔 다이어그램은 시간이
-지나면서 실제와 어긋난다. declared는 반대로 접근한다. 전이 표(또는 기능
-목록) 자체가 소스이고, 다이어그램과 커버리지 검사는 실행기가 실제로 읽는
-그 데이터에서 그대로 생성된다. 동기화할 사본이 애초에 하나뿐이다.
+로직이 `match` 문에 흩어지면 "이 이벤트가 오면 무슨 일이 일어나는가"를 알기
+위해 코드를 전부 읽어야 합니다. 그리고 누군가 그려둔 다이어그램은 시간이
+지나면서 실제와 어긋납니다.
 
-## 두 개의 층, 하나의 어휘
+`declared`는 표를 소스로 둡니다. 다이어그램도 검사도 실행기가 읽는 바로 그
+데이터에서 나오므로, 동기화할 사본이 애초에 없습니다.
 
-| 층 | 쓰는 경우 | 선언하는 것 |
-|---|---|---|
-| `feature` | 동작이 과거에 의존하지 않음 | 기능마다 받는 이벤트와 내는 액션 |
-| `machine` | 같은 이벤트가 상태에 따라 다른 의미를 가짐 | 전이 표 |
-
-두 층은 `Domain`(이벤트·액션·바깥 세상 타입의 묶음)을 공유한다. 그래서
-상태 없이 시작한 기능이 나중에 이력이 필요해져도 선언은 그대로 두고
-작은 `MachineSpec`만 옆에 추가하면 된다. 대부분의 컨트롤러는 `feature`로
-충분하고, 정말 필요한 곳에만 `machine`을 쓴다.
-
-선언 파일은 `declared::prelude::*` 한 줄이면 된다 — 트레잇, 행 타입, 가드 어휘가
-모두 들어 있다. 실행기는 뺐으니 `machine::dispatch`는 계속 출처를 밝힌다.
-
-## 설치
-
-crates.io에 배포되지 않는다. 로컬 경로 의존성으로 쓴다.
-
-```toml
-[dependencies]
-declared = { path = "../fsm" }
+```mermaid
+flowchart LR
+    D["선언<br/>STATES · EDGES · RULES"]
+    D --> R["실행<br/>machine::dispatch"]
+    D --> G["다이어그램<br/>render::state_diagram"]
+    D --> V["누락 검사<br/>verify::coverage"]
 ```
 
-이 크레이트는 `no_std`다. dispatch와 가드 판정, 그리고 그들이 읽는 표는 힙을
-쓰지 않는다. `alloc`은 컨트롤러를 *실행*하는 쪽이 아니라 *보고*하는 쪽 —
-`render`의 문서와 `verify`의 결과 — 에만 필요하다.
+### 두 개의 층
 
-```sh
-cargo build --lib --target thumbv7em-none-eabihf   # 베어메탈로 빌드된다
-```
+같은 어휘(`Domain`)를 공유하는 두 층이 있고, 필요한 쪽만 골라 씁니다.
+
+- **`feature`** — 동작이 과거에 의존하지 않을 때. 받는 이벤트와 내는 액션을 선언합니다.
+- **`machine`** — 같은 이벤트가 상태에 따라 다른 뜻을 가질 때. 전이 표를 선언합니다.
+
+`Domain`을 공유하므로, 상태 없이 시작한 기능이 나중에 이력이 필요해져도
+선언은 그대로 두고 `MachineSpec`만 옆에 추가하면 됩니다. 선언 파일이 가져올
+것은 `use declared::prelude::*;` 한 줄입니다.
 
 ## 빠른 시작
 
-전등을 껐다 켰다 하는 2상태 예제:
+전등을 껐다 켰다 하는 2상태 예제입니다.
 
 ```rust
 use declared::machine;
@@ -60,11 +48,11 @@ declared::events! {
     enum Event => Kind { Toggle }
 }
 
-/// 이벤트에 대한 반응. 이벤트를 건네받는 것은 이쪽뿐이다.
+/// 이벤트에 대한 반응. 이벤트를 건네받는 것은 이쪽뿐입니다.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 enum Action { Click }
 
-/// 상태에 있다는 사실에서 나오는 효과. 어느 엣지로 들어왔든 실행된다.
+/// 상태에 있다는 사실에서 나오는 효과. 어느 엣지로 들어왔든 실행됩니다.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 enum StateAction { TurnOn, TurnOff }
 
@@ -121,71 +109,46 @@ static IGNORES: &[Ignore<Light>] = &[];
 
 fn main() {
     let mut world = World;
-    // 상태 기계는 시작하는 게 아니라 재개한다. `Tag::Off`는 전등이 이미
-    // 꺼져 있다는 뜻이므로 `Off`의 진입 동작은 여기서 실행되지 않는다.
     let mut m = Machine::<Light>::new(Tag::Off);
     machine::dispatch(&mut m, &Event::Toggle, &mut world); // -> click, on
     machine::dispatch(&mut m, &Event::Toggle, &mut world); // -> click, off
 }
 ```
 
-더 큰 예제:
-- [`examples/door_lock`](examples/door_lock/main.rs) — 상태 4개, 조건
-  가드, 와일드카드 `Ignore`. `cargo run --example door_lock`.
-- [`examples/mirrors`](examples/mirrors/main.rs) — 두 층을 섞은 컨트롤러:
-  상태 없는 기능 두 개와 상태 기계 하나. `cargo run --example mirrors`.
+더 큰 예제입니다.
 
-## 코드 대신 선언해서 얻는 것
+- [`examples/door_lock`](examples/door_lock/main.rs) — 상태 4개, 조건 가드, 와일드카드 `Ignore`
+- [`examples/mirrors`](examples/mirrors/main.rs) — 두 층을 섞은 컨트롤러: 상태 없는 기능 둘과 상태 기계 하나
 
-- **실행기.** `machine::dispatch`(또는 `feature::dispatch`)가 작성한 표를
-  그대로 읽는다 — 표와 어긋날 수 있는 별도의 해석 단계가 없다.
-- **다이어그램.** `render::state_diagram`가 전이 표를 `stateDiagram-v2`로
-  뽑아내고, `scripts/mermaid_to_plantuml.sh`로 PlantUML로도 바꿀 수 있다.
-- **누락 검사.** `verify::coverage`가 `(상태, 이벤트)` 조합을 전수
-  순회해 엣지도 `Ignore`도 없는 것을 찾아낸다. 테스트에서 `is_clean()`을
-  assert 해 두면, 빠뜨린 케이스가 운영 환경이 아니라 CI에서 걸린다.
-- **조건은 정의가 하나.** 가드는 머신이나 기능이 아니라 `Domain`에 대해
-  선언한다. "전원이 켜져 있다"는 표마다 하나씩이 아니라 컨트롤러 전체가
-  공유하는 노드 하나다. 노드 이름은 도메인 안에서 고유하다 —
-  `verify::duplicate_node_names`가 기능 목록과 머신 표를 한꺼번에 읽어
-  한 이름에 두 타입이 붙은 것을 보고한다.
-- **실패를 인정하는 조건.** 조건 판정은 `bool`이 아니라
-  `True`/`False`/`Unknown` 세 값이고, 판정 불가일 때의 정책은
-  `Edge::unknown`에 명시된다 — 가드 함수 안에 숨는 대신 다이어그램에
-  드러난다.
-- **추적 가능한 부수효과.** 바깥 세상은 `perform`에서만 바뀐다. 그래서 한 번의
-  dispatch가 만든 모든 효과는 로그로 남기거나 검증할 수 있는 평범한 값이다.
-  모든 행은 id를 갖고(`Edge::id`, `Rule::id`), 양쪽 레이어의 `dispatch`가
-  실행된 행의 id를 돌려준다.
-- **효과의 주인은 그것을 낸 쪽이다.** 기능과 머신이 각자 액션 타입을 가지므로
-  (`Feature::Action`, `MachineSpec::Action`) 모든 `perform`은 자기 파일이
-  선언한 효과에 대해 정확히 exhaustive하다. 액션을 추가하면 그 파일에서만
-  컴파일이 깨지고, 어떤 파일도 남의 효과를 들고 있지 않다. `Domain`에는 정말로
-  공유되는 것 — 이벤트와 세상 — 만 남는다.
-- **이벤트를 볼 수 없는 진입 동작.** 진입/이탈은 어느 엣지로 들어왔든
-  실행되므로 별도 어휘 `MachineSpec::StateAction`을 쓰고, `perform_state`는
-  이벤트를 받지 않는다 — 이벤트가 필요한 효과는 엣지로 간다. 상태를 가진 건
-  머신뿐이므로 이 어휘는 머신에 붙는다.
+## 이점
 
-## 프로젝트 구조
+- **표가 곧 실행 코드입니다**
+  - `machine::dispatch`와 `feature::dispatch`가 작성한 표를 그대로 읽습니다.
+  - 표와 어긋날 수 있는 별도의 해석 단계가 없습니다.
 
-```
-src/
-  lib.rs          // Domain, MachineSpec — 라이브러리 진입점
-  guard.rs        // 두 층이 함께 쓰는 조건: Cond, OnUnknown
-  guard/          // CondNode, Cx, Memo, Expr
-  feature.rs      // 상태 없는 층: Feature, Rule, AnyFeature
-  machine.rs      // 상태 있는 층: Machine, dispatch, Taken
-  machine/        // State, Edge, Source, Goto, Ignore
-  verify.rs       // coverage, duplicate_node_names, unhandled_kinds, ...
-  render.rs       // state_diagram, io_flowchart, *_table
-examples/
-  door_lock/      // cargo run --example door_lock
-  mirrors/        // cargo run --example mirrors
-```
+- **빠뜨린 조합은 CI에서 걸립니다**
+  - `verify::coverage`가 `(상태 × 이벤트)`를 전수 순회해 엣지도 `Ignore`도 없는 것을 보고합니다.
+  - 테스트에서 `is_clean()`을 assert 해 두면 운영이 아니라 CI에서 멈춥니다.
 
-`Domain`/`MachineSpec` 계약, 가드 작성법, dispatch 실행 순서 같은 상세
-API 설명은 타입 자체에 문서로 달려 있다. `cargo doc --open`으로 확인한다.
+- **조건은 정의가 하나입니다**
+  - 가드는 머신이나 기능이 아니라 `Domain`에 대해 선언합니다. "전원이 켜져 있다"는 컨트롤러 전체가 공유하는 노드 하나입니다.
+  - 노드 이름은 도메인 안에서 고유하며, `verify::duplicate_node_names`가 확인합니다.
+
+- **판정 불가를 숨기지 않습니다**
+  - 조건은 `bool`이 아니라 `True`/`False`/`Unknown` 세 값입니다.
+  - 불가일 때의 정책은 `Edge::unknown`에 적히고, 가드 함수 안이 아니라 다이어그램에 드러납니다.
+
+- **효과를 추적할 수 있습니다**
+  - 바깥 세상은 `perform`에서만 바뀝니다. 한 번의 dispatch가 만든 효과는 전부 로그로 남기거나 검증할 수 있는 값입니다.
+  - 모든 행이 id를 갖고(`Edge::id`, `Rule::id`), 양쪽 층의 `dispatch`가 실행된 행의 id를 돌려줍니다.
+
+- **효과의 주인은 그것을 낸 쪽입니다**
+  - 기능과 머신이 각자 액션 타입을 가지므로, 모든 `perform`은 자기 파일이 선언한 효과에 대해서만 exhaustive합니다. 액션을 추가하면 그 파일에서만 컴파일이 깨집니다.
+  - 진입·이탈은 어느 엣지로 들어왔든 실행되므로 `StateAction`이라는 별도 어휘를 쓰고, `perform_state`는 이벤트를 받지 않습니다. 이벤트가 필요한 효과는 엣지로 갑니다.
+
+- **`no_std`입니다**
+  - `core`만으로 돌아가며, dispatch와 가드 판정은 힙을 쓰지 않습니다.
+  - `alloc`은 `render`와 `verify` — 컨트롤러를 실행하는 쪽이 아니라 보고하는 쪽 — 에만 필요합니다.
 
 ## 테스트
 
@@ -195,5 +158,6 @@ cargo run --example door_lock          # examples/door_lock/door_lock.md 검사
 cargo run --example mirrors            # examples/mirrors/mirrors.md 검사
 ```
 
-각 예제는 문서를 다시 만들어 커밋된 `.md`와 대조하고, 어긋나면 실패한다 —
-그 파일들이 `render`의 테스트다. 의도한 변경 뒤에는 `-- --write`로 재생성한다.
+각 예제는 문서를 다시 만들어 커밋된 `.md`와 대조하고, 어긋나면 실패합니다.
+그 파일들이 `render`의 테스트입니다. 의도한 변경 뒤에는 `-- --write`로
+재생성합니다.
