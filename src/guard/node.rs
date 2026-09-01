@@ -144,17 +144,17 @@ impl<D: Domain> Expr<D> {
 /// Declares a guard node as a unit struct plus its [`CondNode`] impl.
 ///
 /// ```
-/// # use chart::guard::Cond;
+/// # use declared::guard::Cond;
 /// # #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 /// # pub enum Gear { Reverse, Drive }
-/// # chart::events! { #[derive(Debug)] pub enum Event => Kind { GearChanged(Gear), Tick } }
+/// # declared::events! { #[derive(Debug)] pub enum Event => Kind { GearChanged(Gear), Tick } }
 /// # pub struct RearCam;
-/// # impl chart::Domain for RearCam {
+/// # impl declared::Domain for RearCam {
 /// #     type Event = Event;
 /// #     type EventKind = Kind;
 /// #     type World = ();
 /// # }
-/// chart::cond_node!(RearCam, GearIsReverse, |cx| match cx.event {
+/// declared::cond_node!(RearCam, GearIsReverse, |cx| match cx.event {
 ///     Event::GearChanged(g) => Cond::from(*g == Gear::Reverse),
 ///     _ => Cond::False,
 /// });

@@ -1,4 +1,4 @@
-# chart
+# declared
 
 선언형 컨트롤러 프레임워크. 컨트롤러가 무엇에 반응하고 무엇을 하는지를
 정적 데이터(상태 전이 표, 또는 단순한 입출력 목록)로 선언하면, 그 선언
@@ -10,7 +10,7 @@
 
 로직을 `match` 문에 흩어 두면 "이 이벤트가 오면 무슨 일이 일어나는가"를
 파악하려고 코드를 전부 읽어야 하고, 누군가 그려둔 다이어그램은 시간이
-지나면서 실제와 어긋난다. chart는 반대로 접근한다. 전이 표(또는 기능
+지나면서 실제와 어긋난다. declared는 반대로 접근한다. 전이 표(또는 기능
 목록) 자체가 소스이고, 다이어그램과 커버리지 검사는 실행기가 실제로 읽는
 그 데이터에서 그대로 생성된다. 동기화할 사본이 애초에 하나뿐이다.
 
@@ -26,7 +26,7 @@
 작은 `MachineSpec`만 옆에 추가하면 된다. 대부분의 컨트롤러는 `feature`로
 충분하고, 정말 필요한 곳에만 `machine`을 쓴다.
 
-선언 파일은 `chart::prelude::*` 한 줄이면 된다 — 트레잇, 행 타입, 가드 어휘가
+선언 파일은 `declared::prelude::*` 한 줄이면 된다 — 트레잇, 행 타입, 가드 어휘가
 모두 들어 있다. 실행기는 뺐으니 `machine::dispatch`는 계속 출처를 밝힌다.
 
 ## 설치
@@ -35,7 +35,7 @@ crates.io에 배포되지 않는다. 로컬 경로 의존성으로 쓴다.
 
 ```toml
 [dependencies]
-chart = { path = "../chart" }
+declared = { path = "../fsm" }
 ```
 
 이 크레이트는 `no_std`다. dispatch와 가드 판정, 그리고 그들이 읽는 표는 힙을
@@ -51,11 +51,11 @@ cargo build --lib --target thumbv7em-none-eabihf   # 베어메탈로 빌드된�
 전등을 껐다 켰다 하는 2상태 예제:
 
 ```rust
-use chart::machine;
-use chart::prelude::*;
+use declared::machine;
+use declared::prelude::*;
 
-chart::tags! { enum Tag { Off, On } }
-chart::events! {
+declared::tags! { enum Tag { Off, On } }
+declared::events! {
     #[derive(Clone, Debug)]
     enum Event => Kind { Toggle }
 }
@@ -110,10 +110,10 @@ static STATES: &[State<Light>] = &[
 
 static EDGES: &[Edge<Light>] = &[
     Edge { id: "TURN_ON",  from: Source::These(&[Tag::Off]), when: Kind::Toggle,
-           check: chart::check!(), unknown: OnUnknown::Deny,
+           check: declared::check!(), unknown: OnUnknown::Deny,
            emit: &[Action::Click], goto: Goto::To(Tag::On) },
     Edge { id: "TURN_OFF", from: Source::These(&[Tag::On]),  when: Kind::Toggle,
-           check: chart::check!(), unknown: OnUnknown::Deny,
+           check: declared::check!(), unknown: OnUnknown::Deny,
            emit: &[Action::Click], goto: Goto::To(Tag::Off) },
 ];
 

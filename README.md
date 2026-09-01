@@ -1,4 +1,4 @@
-# chart
+# declared
 
 A declarative controller framework for Rust. You describe what a controller
 reacts to and what it does about it as static data — a state table, or a
@@ -11,7 +11,7 @@ runtime, generates a mermaid diagram, and gets checked for gaps.
 
 Controller logic tends to spread across `match` arms until "what happens when
 X arrives" can only be answered by reading the whole file, and the diagram
-someone drew for it slowly stops matching reality. chart flips that: the
+someone drew for it slowly stops matching reality. declared flips that: the
 transition table (or feature list) *is* the source of truth, so the diagram
 and the exhaustive coverage check are generated from the exact data the
 executor runs. There's nothing to keep in sync because there's only one copy.
@@ -28,7 +28,7 @@ controller works with — so a stateless feature that later needs history
 doesn't change; you just add a small `MachineSpec` next to it. Most
 controllers are mostly `feature`, with a `machine` where it's actually needed.
 
-Every declaration file imports `chart::prelude::*` — the traits, the row types
+Every declaration file imports `declared::prelude::*` — the traits, the row types
 and the guard vocabulary in one line. The executors stay out of it, so
 `machine::dispatch` still says where it comes from.
 
@@ -38,7 +38,7 @@ Not published to crates.io — use it as a path dependency.
 
 ```toml
 [dependencies]
-chart = { path = "../chart" }
+declared = { path = "../fsm" }
 ```
 
 The crate is `no_std`. Dispatch, guard evaluation and the tables they read
@@ -54,11 +54,11 @@ cargo build --lib --target thumbv7em-none-eabihf   # builds bare-metal
 A two-state light switch:
 
 ```rust
-use chart::machine;
-use chart::prelude::*;
+use declared::machine;
+use declared::prelude::*;
 
-chart::tags! { enum Tag { Off, On } }
-chart::events! {
+declared::tags! { enum Tag { Off, On } }
+declared::events! {
     #[derive(Clone, Debug)]
     enum Event => Kind { Toggle }
 }
@@ -113,10 +113,10 @@ static STATES: &[State<Light>] = &[
 
 static EDGES: &[Edge<Light>] = &[
     Edge { id: "TURN_ON",  from: Source::These(&[Tag::Off]), when: Kind::Toggle,
-           check: chart::check!(), unknown: OnUnknown::Deny,
+           check: declared::check!(), unknown: OnUnknown::Deny,
            emit: &[Action::Click], goto: Goto::To(Tag::On) },
     Edge { id: "TURN_OFF", from: Source::These(&[Tag::On]),  when: Kind::Toggle,
-           check: chart::check!(), unknown: OnUnknown::Deny,
+           check: declared::check!(), unknown: OnUnknown::Deny,
            emit: &[Action::Click], goto: Goto::To(Tag::Off) },
 ];
 

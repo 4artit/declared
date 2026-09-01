@@ -1,5 +1,5 @@
 #!/bin/sh
-# Converts the mermaid `stateDiagram-v2` produced by `chart::render::to_mermaid`
+# Converts the mermaid `stateDiagram-v2` produced by `declared::render::state_diagram`
 # into PlantUML.
 #
 # Accepts either a raw diagram or a markdown file containing a ```mermaid fence;

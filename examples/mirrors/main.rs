@@ -17,15 +17,15 @@ mod fold;
 mod guards;
 mod heating;
 
-use chart::feature::AnyFeature;
-use chart::machine::{self, Machine};
-use chart::{Domain, HasKind, render, verify};
+use declared::feature::AnyFeature;
+use declared::machine::{self, Machine};
+use declared::{Domain, HasKind, render, verify};
 
 use dimming::Dimming;
 use fold::FoldSm;
 use heating::Heating;
 
-chart::events! {
+declared::events! {
     #[derive(Clone, Debug)]
     pub enum Event => Kind {
         DefogChanged(bool),

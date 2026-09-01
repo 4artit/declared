@@ -1493,14 +1493,14 @@ fn rule_table_marks_an_allowing_rule() {
 
 #[test]
 fn io_flowchart_keeps_features_and_actions_apart() {
-    let chart = render::io_flowchart(CAMERA_FEATURES);
+    let declared = render::io_flowchart(CAMERA_FEATURES);
 
-    assert!(chart.contains(r#"ev_GearChanged["GearChanged"] --> ft_Camera["Camera"]"#));
+    assert!(declared.contains(r#"ev_GearChanged["GearChanged"] --> ft_Camera["Camera"]"#));
     assert!(
-        chart.contains(
+        declared.contains(
             r#"ft_Camera["Camera"] -->|"GearIsReverse"| ac_Camera_ShowCamera["ShowCamera"]"#
         ),
-        "{chart}"
+        "{declared}"
     );
 }
 
@@ -1508,32 +1508,32 @@ fn io_flowchart_keeps_features_and_actions_apart() {
 /// alike are drawing two different effects, so the nodes must not merge.
 #[test]
 fn io_flowchart_scopes_action_nodes_to_their_feature() {
-    let chart = render::io_flowchart(&[&Camera, &Noisy]);
+    let declared = render::io_flowchart(&[&Camera, &Noisy]);
 
-    assert!(chart.contains("ac_Camera_ShowCamera"), "{chart}");
-    assert!(chart.contains("ac_Noisy_ShowCamera"), "{chart}");
+    assert!(declared.contains("ac_Camera_ShowCamera"), "{declared}");
+    assert!(declared.contains("ac_Noisy_ShowCamera"), "{declared}");
 }
 
 /// The arrow an action arrives by carries the condition that produced it, so
 /// the diagram says why and not only whether.
 #[test]
 fn io_flowchart_labels_arrows_with_their_guard() {
-    let chart = render::io_flowchart(&[&Camera]);
+    let declared = render::io_flowchart(&[&Camera]);
 
     assert!(
-        chart.contains(r#"ft_Camera["Camera"] -->|else| ac_Camera_HideCamera["HideCamera"]"#),
-        "{chart}"
+        declared.contains(r#"ft_Camera["Camera"] -->|else| ac_Camera_HideCamera["HideCamera"]"#),
+        "{declared}"
     );
 }
 
 /// An unconditional rule's arrow carries no label at all.
 #[test]
 fn io_flowchart_leaves_an_unconditional_arrow_bare() {
-    let chart = render::io_flowchart(&[&Always]);
+    let declared = render::io_flowchart(&[&Always]);
 
     assert!(
-        chart.contains(r#"ft_Always["Always"] --> ac_Always_UpdateOverlay["UpdateOverlay"]"#),
-        "{chart}"
+        declared.contains(r#"ft_Always["Always"] --> ac_Always_UpdateOverlay["UpdateOverlay"]"#),
+        "{declared}"
     );
 }
 

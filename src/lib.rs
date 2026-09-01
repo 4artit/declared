@@ -68,10 +68,10 @@ pub use enums::{Enumerable, HasKind};
 /// where it comes from.
 ///
 /// ```
-/// use chart::prelude::*;
+/// use declared::prelude::*;
 ///
-/// chart::tags! { enum Tag { Off, On } }
-/// chart::events! { #[derive(Debug)] enum Event => Kind { Toggle } }
+/// declared::tags! { enum Tag { Off, On } }
+/// declared::events! { #[derive(Debug)] enum Event => Kind { Toggle } }
 ///
 /// struct Light;
 /// impl Domain for Light {
@@ -126,19 +126,19 @@ pub trait Domain: Sized + 'static {
 /// cannot be forgotten.
 ///
 /// ```
-/// # chart::tags! { pub enum Tag { Only } }
-/// # chart::events! { #[derive(Debug)] pub enum Event => Kind { Tick } }
-/// # use chart::machine::{Edge, Ignore, Source, State};
+/// # declared::tags! { pub enum Tag { Only } }
+/// # declared::events! { #[derive(Debug)] pub enum Event => Kind { Tick } }
+/// # use declared::machine::{Edge, Ignore, Source, State};
 /// # pub struct Dom;
-/// # impl chart::Domain for Dom {
+/// # impl declared::Domain for Dom {
 /// #     type Event = Event;
 /// #     type EventKind = Kind;
 /// #     type World = ();
 /// # }
 /// # pub struct Sm;
-/// use chart::NoAction;
+/// use declared::NoAction;
 ///
-/// impl chart::MachineSpec for Sm {
+/// impl declared::MachineSpec for Sm {
 /// #   const NAME: &'static str = "Sm";
 /// #   type Domain = Dom;
 /// #   type Tag = Tag;

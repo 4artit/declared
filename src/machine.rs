@@ -118,7 +118,7 @@ impl<M: MachineSpec> Machine<M> {
         #[cfg(debug_assertions)]
         {
             let cov = crate::verify::coverage::<M>(initial, M::EDGES, M::IGNORES);
-            assert!(cov.is_clean(), "[chart] table has holes: {cov:?}");
+            assert!(cov.is_clean(), "[declared] table has holes: {cov:?}");
         }
 
         Self { tag: initial }
@@ -236,7 +236,7 @@ pub fn dispatch<M: MachineSpec>(
         // worth a line when tracing.
         Selected::Declined => {
             log::debug!(
-                "[chart] {}/declined: {:?} x {ev:?} (every guard said no: {:?})",
+                "[declared] {}/declined: {:?} x {ev:?} (every guard said no: {:?})",
                 M::NAME,
                 m.tag,
                 m.rows_for(kind)
@@ -249,7 +249,7 @@ pub fn dispatch<M: MachineSpec>(
         Selected::NoRow => {
             if !M::IGNORES.iter().any(|i| i.matches(m.tag, kind)) {
                 log::warn!(
-                    "[chart] {}/no row: {:?} x {ev:?} (no edge, no ignore)",
+                    "[declared] {}/no row: {:?} x {ev:?} (no edge, no ignore)",
                     M::NAME,
                     m.tag
                 );
@@ -284,7 +284,7 @@ pub fn dispatch<M: MachineSpec>(
     // `log::debug!` evaluates its arguments only when the level is enabled, so
     // this formats nothing in a release build with logging off.
     log::debug!(
-        "[chart] {}/{id}: {ev:?} -> {:?} {exit:?} {emit:?} {entry:?}",
+        "[declared] {}/{id}: {ev:?} -> {:?} {exit:?} {emit:?} {entry:?}",
         M::NAME,
         m.tag
     );

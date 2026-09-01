@@ -1,4 +1,4 @@
-//! Example use of the `chart` crate: a door lock opened by a four-digit code.
+//! Example use of the `declared` crate: a door lock opened by a four-digit code.
 //!
 //!     cargo run --example door_lock
 //!
@@ -12,10 +12,10 @@
 //! from the event, so `Unlock` is an `Action` on the `UNLOCK` edge and only the
 //! clearing is left to `Unlocked`'s exit.
 
-use chart::prelude::*;
-use chart::{machine, render, verify};
+use declared::prelude::*;
+use declared::{machine, render, verify};
 
-chart::tags! {
+declared::tags! {
     enum Tag {
         Locked,
         Unlocked,
@@ -26,7 +26,7 @@ chart::tags! {
 
 // Event, Kind, HasKind and the coverage value list all come from this one
 // declaration.
-chart::events! {
+declared::events! {
     #[derive(Clone, Debug)]
     enum Event => Kind {
         EnterCode(u32),
@@ -128,12 +128,12 @@ impl MachineSpec for Door {
 /// runtime choice and is not a const on the spec.
 const INITIAL: Tag = Tag::Locked;
 
-chart::cond_node!(Door, CodeCorrect, |cx| match cx.event {
+declared::cond_node!(Door, CodeCorrect, |cx| match cx.event {
     Event::EnterCode(code) => Cond::from(*code == cx.world.correct_code),
     _ => Cond::False,
 });
 
-chart::cond_node!(Door, AttemptsExceeded, |cx| Cond::from(
+declared::cond_node!(Door, AttemptsExceeded, |cx| Cond::from(
     cx.world.attempts >= cx.world.max_attempts
 ));
 
@@ -167,7 +167,7 @@ static EDGES: &[Edge<Door>] = &[
         id: "UNLOCK",
         from: Source::These(&[Tag::Locked]),
         when: Kind::EnterCode,
-        check: chart::check!(CodeCorrect),
+        check: declared::check!(CodeCorrect),
         unknown: OnUnknown::Deny,
         // Reads the digits out of `EnterCode`, so it belongs to this edge.
         emit: &[Action::Unlock],
@@ -177,7 +177,7 @@ static EDGES: &[Edge<Door>] = &[
         id: "WRONG_CODE",
         from: Source::These(&[Tag::Locked]),
         when: Kind::EnterCode,
-        check: chart::check!(!CodeCorrect && !AttemptsExceeded),
+        check: declared::check!(!CodeCorrect && !AttemptsExceeded),
         unknown: OnUnknown::Deny,
         emit: &[Action::Beep, Action::IncrementAttempts],
         goto: Goto::Internal,
@@ -186,7 +186,7 @@ static EDGES: &[Edge<Door>] = &[
         id: "TRIGGER_ALARM",
         from: Source::These(&[Tag::Locked]),
         when: Kind::EnterCode,
-        check: chart::check!(!CodeCorrect && AttemptsExceeded),
+        check: declared::check!(!CodeCorrect && AttemptsExceeded),
         unknown: OnUnknown::Deny,
         emit: &[],
         goto: Goto::To(Tag::Alarm),
@@ -195,7 +195,7 @@ static EDGES: &[Edge<Door>] = &[
         id: "RELOCK",
         from: Source::These(&[Tag::Unlocked]),
         when: Kind::Timeout,
-        check: chart::check!(),
+        check: declared::check!(),
         unknown: OnUnknown::Deny,
         emit: &[],
         goto: Goto::To(Tag::Locked),
@@ -204,7 +204,7 @@ static EDGES: &[Edge<Door>] = &[
         id: "ALARM_RESET",
         from: Source::These(&[Tag::Alarm]),
         when: Kind::Reset,
-        check: chart::check!(),
+        check: declared::check!(),
         unknown: OnUnknown::Deny,
         emit: &[],
         goto: Goto::To(Tag::Locked),
@@ -213,7 +213,7 @@ static EDGES: &[Edge<Door>] = &[
         id: "ENTER_MAINTENANCE",
         from: Source::These(&[Tag::Locked]),
         when: Kind::MaintenanceToggle,
-        check: chart::check!(),
+        check: declared::check!(),
         unknown: OnUnknown::Deny,
         emit: &[],
         goto: Goto::To(Tag::Maintenance),
@@ -222,7 +222,7 @@ static EDGES: &[Edge<Door>] = &[
         id: "EXIT_MAINTENANCE",
         from: Source::These(&[Tag::Maintenance]),
         when: Kind::MaintenanceToggle,
-        check: chart::check!(),
+        check: declared::check!(),
         unknown: OnUnknown::Deny,
         emit: &[],
         goto: Goto::To(Tag::Locked),

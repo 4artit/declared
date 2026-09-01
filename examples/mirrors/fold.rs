@@ -4,14 +4,14 @@
 //! The spec names [`crate::Mirrors`] as its domain, sharing that controller's
 //! events, actions, guards and `perform`.
 
-use chart::prelude::*;
-use chart::verify::Coverage;
-use chart::{render, verify};
+use declared::prelude::*;
+use declared::verify::Coverage;
+use declared::{render, verify};
 
 use crate::guards::{AtFolded, AtUnfolded, PowerOff, PowerOn, SpeedAllowsFold, SpeedForcesUnfold};
 use crate::{Event, Kind, Mirrors, World};
 
-chart::tags! {
+declared::tags! {
     pub enum FoldTag {
         Unfolded,
         Folding,
@@ -35,7 +35,7 @@ impl MachineSpec for FoldSm {
 
     type Domain = Mirrors;
     type Tag = FoldTag;
-    type Action = chart::NoAction;
+    type Action = declared::NoAction;
     type StateAction = StateAction;
 
     const STATES: &'static [State<FoldSm>] = STATES;
@@ -45,7 +45,7 @@ impl MachineSpec for FoldSm {
     /// No edge here carries a `run` list: folding is expressed entirely by the
     /// states it passes through, so there is nothing for a transition to do on
     /// its own. `NoAction` says so in the type, and this body cannot be wrong.
-    fn perform(action: chart::NoAction, _ev: &Event, _world: &mut World) {
+    fn perform(action: declared::NoAction, _ev: &Event, _world: &mut World) {
         match action {}
     }
 
@@ -93,7 +93,7 @@ static EDGES: &[Edge<FoldSm>] = &[
         id: "FOLD_START",
         from: Source::These(&[FoldTag::Unfolded]),
         when: Kind::PowerChanged,
-        check: chart::check!(PowerOff && SpeedAllowsFold),
+        check: declared::check!(PowerOff && SpeedAllowsFold),
         unknown: OnUnknown::Deny,
         emit: &[],
         goto: Goto::To(FoldTag::Folding),
@@ -102,7 +102,7 @@ static EDGES: &[Edge<FoldSm>] = &[
         id: "FOLD_DONE",
         from: Source::These(&[FoldTag::Folding]),
         when: Kind::FoldPositionChanged,
-        check: chart::check!(AtFolded),
+        check: declared::check!(AtFolded),
         unknown: OnUnknown::Deny,
         emit: &[],
         goto: Goto::To(FoldTag::Folded),
@@ -111,7 +111,7 @@ static EDGES: &[Edge<FoldSm>] = &[
         id: "UNFOLD_ON_POWER",
         from: Source::These(&[FoldTag::Folded]),
         when: Kind::PowerChanged,
-        check: chart::check!(PowerOn),
+        check: declared::check!(PowerOn),
         unknown: OnUnknown::Deny,
         emit: &[],
         goto: Goto::To(FoldTag::Unfolding),
@@ -120,7 +120,7 @@ static EDGES: &[Edge<FoldSm>] = &[
         id: "UNFOLD_ON_SPEED",
         from: Source::These(&[FoldTag::Folded]),
         when: Kind::SpeedChanged,
-        check: chart::check!(SpeedForcesUnfold),
+        check: declared::check!(SpeedForcesUnfold),
         unknown: OnUnknown::Deny,
         emit: &[],
         goto: Goto::To(FoldTag::Unfolding),
@@ -129,7 +129,7 @@ static EDGES: &[Edge<FoldSm>] = &[
         id: "UNFOLD_DONE",
         from: Source::These(&[FoldTag::Unfolding]),
         when: Kind::FoldPositionChanged,
-        check: chart::check!(AtUnfolded),
+        check: declared::check!(AtUnfolded),
         unknown: OnUnknown::Deny,
         emit: &[],
         goto: Goto::To(FoldTag::Unfolded),

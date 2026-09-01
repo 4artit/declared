@@ -5,7 +5,7 @@
 //! is read from the world, which the caller has already updated. That is why the
 //! condition is written once rather than once per event.
 
-use chart::prelude::*;
+use declared::prelude::*;
 
 use crate::guards::{GearReverse, PowerOn};
 use crate::{Event, Kind, Mirrors, World};
@@ -18,7 +18,7 @@ pub enum Action {
 }
 
 // Only needed by `verify::unemitted_actions`; `Feature` does not require it.
-impl chart::Enumerable for Action {
+impl declared::Enumerable for Action {
     const ALL: &'static [Self] = &[Self::On, Self::Off];
 }
 
@@ -37,14 +37,14 @@ impl Feature for Dimming {
         Rule {
             id: "DIM_ON",
             when: INPUTS,
-            check: chart::check!(PowerOn && !GearReverse),
+            check: declared::check!(PowerOn && !GearReverse),
             unknown: OnUnknown::Deny,
             emit: &[Action::On],
         },
         Rule {
             id: "DIM_OFF",
             when: INPUTS,
-            check: chart::check!(),
+            check: declared::check!(),
             unknown: OnUnknown::Deny,
             emit: &[Action::Off],
         },

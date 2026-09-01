@@ -3,7 +3,7 @@
 //! Its effects, its rules and its execution are all here; nothing about heating
 //! is declared anywhere else.
 
-use chart::prelude::*;
+use declared::prelude::*;
 
 use crate::guards::DefogOn;
 use crate::{Event, Kind, Mirrors, World};
@@ -17,7 +17,7 @@ pub enum Action {
 }
 
 // Only needed by `verify::unemitted_actions`; `Feature` does not require it.
-impl chart::Enumerable for Action {
+impl declared::Enumerable for Action {
     const ALL: &'static [Self] = &[Self::On, Self::Off];
 }
 
@@ -33,7 +33,7 @@ impl Feature for Heating {
         Rule {
             id: "HEAT_ON",
             when: &[Kind::DefogChanged],
-            check: chart::check!(DefogOn),
+            check: declared::check!(DefogOn),
             unknown: OnUnknown::Deny,
             emit: &[Action::On],
         },
@@ -42,7 +42,7 @@ impl Feature for Heating {
         Rule {
             id: "HEAT_OFF",
             when: &[Kind::DefogChanged],
-            check: chart::check!(),
+            check: declared::check!(),
             unknown: OnUnknown::Deny,
             emit: &[Action::Off],
         },

@@ -24,11 +24,11 @@ pub trait Enumerable: Copy + Eq + Debug + 'static {
 /// ```
 /// # #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 /// # pub enum Kind { TiltAdjust, Gear }
-/// # impl chart::Enumerable for Kind {
+/// # impl declared::Enumerable for Kind {
 /// #     const ALL: &'static [Self] = &[Self::TiltAdjust, Self::Gear];
 /// # }
 /// # pub enum Event { TiltUp, TiltDown, Gear(u8) }
-/// impl chart::HasKind for Event {
+/// impl declared::HasKind for Event {
 ///     type Kind = Kind;
 ///     fn kind(&self) -> Kind {
 ///         match self {
@@ -55,7 +55,7 @@ pub trait HasKind {
 /// any outer attributes.
 ///
 /// ```
-/// chart::tags! {
+/// declared::tags! {
 ///     pub enum Tag {
 ///         Locked,
 ///         Unlocked,
@@ -95,7 +95,7 @@ macro_rules! tags {
 /// derived), `impl HasKind for Event`, and `impl Enumerable for Kind`.
 ///
 /// ```
-/// chart::events! {
+/// declared::events! {
 ///     #[derive(Clone, Debug)]
 ///     pub enum Event => Kind {
 ///         EnterCode(u32),
