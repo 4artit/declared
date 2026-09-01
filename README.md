@@ -4,7 +4,7 @@ A declarative controller framework for Rust. You describe what a controller
 reacts to and what it does about it as static data, and that one declaration
 drives the runtime, the diagram, and the gap check.
 
-[한국어 문서](README_KR.md)
+[한국어 문서](README_KR.md) · [개발자 문서 (한국어)](docs/README.md)
 
 ## Purpose
 

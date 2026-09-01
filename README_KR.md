@@ -4,7 +4,7 @@
 정적 데이터로 선언하면, 그 선언 하나가 실행기와 다이어그램과 누락 검사를
 만들어냅니다.
 
-[English README](README.md)
+[English README](README.md) · [개발자 문서](docs/README.md)
 
 ## 목적
 
