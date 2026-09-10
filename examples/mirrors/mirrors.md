@@ -27,18 +27,66 @@ fallback.
 | `Dimming` | `DIM_ON` | `PowerChanged`, `GearChanged` | `PowerOn && !GearReverse` | `On` |
 | `Dimming` | `DIM_OFF` | `PowerChanged`, `GearChanged` | else | `Off` |
 
-## Events, features and actions
+## By event
+
+One signal at a time, which is the shape a requirement is written in. A rule
+covering several kinds appears under each of them; the `when` column is what
+says so.
+
+### DefogChanged
+
+| feature | rule | when | guard | emits |
+|---|---|---|---|---|
+| `Heating` | `HEAT_ON` | `DefogChanged` | `DefogOn` | `On` |
+| `Heating` | `HEAT_OFF` | `DefogChanged` | else | `Off` |
 
 ```mermaid
 flowchart LR
     ev_DefogChanged["DefogChanged"] --> ft_Heating["Heating"]
-    ft_Heating["Heating"] -->|"DefogOn"| ac_Heating_On["On"]
-    ft_Heating["Heating"] -->|else| ac_Heating_Off["Off"]
-    ev_PowerChanged["PowerChanged"] --> ft_Dimming["Dimming"]
-    ev_GearChanged["GearChanged"] --> ft_Dimming["Dimming"]
-    ft_Dimming["Dimming"] -->|"PowerOn && !GearReverse"| ac_Dimming_On["On"]
-    ft_Dimming["Dimming"] -->|else| ac_Dimming_Off["Off"]
+    ft_Heating["Heating"] -->|"HEAT_ON<br/>DefogOn"| ac_Heating_On["On"]
+    ft_Heating["Heating"] -->|"HEAT_OFF<br/>else"| ac_Heating_Off["Off"]
 ```
+
+### PowerChanged
+
+| feature | rule | when | guard | emits |
+|---|---|---|---|---|
+| `Dimming` | `DIM_ON` | `PowerChanged`, `GearChanged` | `PowerOn && !GearReverse` | `On` |
+| `Dimming` | `DIM_OFF` | `PowerChanged`, `GearChanged` | else | `Off` |
+
+```mermaid
+flowchart LR
+    ev_PowerChanged["PowerChanged"] --> ft_Dimming["Dimming"]
+    ft_Dimming["Dimming"] -->|"DIM_ON<br/>PowerOn && !GearReverse"| ac_Dimming_On["On"]
+    ft_Dimming["Dimming"] -->|"DIM_OFF<br/>else"| ac_Dimming_Off["Off"]
+```
+
+### GearChanged
+
+| feature | rule | when | guard | emits |
+|---|---|---|---|---|
+| `Dimming` | `DIM_ON` | `PowerChanged`, `GearChanged` | `PowerOn && !GearReverse` | `On` |
+| `Dimming` | `DIM_OFF` | `PowerChanged`, `GearChanged` | else | `Off` |
+
+```mermaid
+flowchart LR
+    ev_GearChanged["GearChanged"] --> ft_Dimming["Dimming"]
+    ft_Dimming["Dimming"] -->|"DIM_ON<br/>PowerOn && !GearReverse"| ac_Dimming_On["On"]
+    ft_Dimming["Dimming"] -->|"DIM_OFF<br/>else"| ac_Dimming_Off["Off"]
+```
+
+### SpeedChanged
+
+No feature reacts to this event.
+
+### FoldPositionChanged
+
+No feature reacts to this event.
+
+### UserChanged
+
+No feature reacts to this event.
+
 
 ## Folding
 

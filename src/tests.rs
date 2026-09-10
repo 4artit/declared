@@ -1336,6 +1336,36 @@ fn dispatch_evaluates_a_shared_node_once() {
     assert_eq!(w.speed_lookups.get(), 1);
 }
 
+/// An action carrying a value, whose `{:?}` puts punctuation in the middle of
+/// what becomes a node id.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+enum PayloadAction {
+    Show(u8),
+}
+
+struct Payload;
+
+impl Feature for Payload {
+    type Domain = RearCam;
+    type Action = PayloadAction;
+
+    const NAME: &'static str = "Payload";
+
+    const RULES: &'static [Rule<RearCam, PayloadAction>] = &[Rule {
+        id: "PAYLOAD_1",
+        when: &[Kind::GearChanged],
+        check: crate::check!(GearIsReverse),
+        unknown: OnUnknown::Deny,
+        emit: &[PayloadAction::Show(7)],
+    }];
+
+    fn perform(action: PayloadAction, ev: &Event, world: &mut World) {
+        match action {
+            PayloadAction::Show(_) => perform_for_event(Action::ShowCamera, ev, world),
+        }
+    }
+}
+
 /// Rules that overlap in both columns. `handles` and `emits` are the union, so
 /// the summary table does not repeat itself.
 struct Noisy;
@@ -1491,49 +1521,119 @@ fn rule_table_marks_an_allowing_rule() {
     );
 }
 
+// ─────────────────────────────────────────── one event at a time
+
+/// One signal's whole answer, features included, and nothing else.
 #[test]
-fn io_flowchart_keeps_features_and_actions_apart() {
-    let declared = render::io_flowchart(CAMERA_FEATURES);
+fn event_table_gathers_one_kind_across_features() {
+    let table = render::event_table(CAMERA_FEATURES, Kind::GearChanged);
+
+    assert!(table.contains("`CAMERA_1`"), "{table}");
+    assert!(table.contains("`CAMERA_2`"), "{table}");
+    // Overlay reacts to SpeedChanged alone, so it contributes no row here.
+    assert!(!table.contains("`OVERLAY_1`"), "{table}");
+}
+
+/// The `when` column survives the filter, so a rule appearing under two signals
+/// says why.
+#[test]
+fn event_table_keeps_the_whole_trigger_set() {
+    let table = render::event_table(&[&Noisy], Kind::PowerChanged);
+
+    assert!(
+        table.contains("| `Noisy` | `NOISY_2` | `GearChanged`, `PowerChanged` |"),
+        "{table}"
+    );
+}
+
+/// Shadowing is a question about one signal, not about a feature: `NOISY_2` is
+/// `NOISY_1`'s fallback on `GearChanged` and unconditional on `PowerChanged`.
+#[test]
+fn event_table_decides_else_against_the_event_not_the_feature() {
+    let gear = render::event_table(&[&Noisy], Kind::GearChanged);
+    let power = render::event_table(&[&Noisy], Kind::PowerChanged);
+
+    assert!(gear.contains("| `NOISY_2` | `GearChanged`, `PowerChanged` | else |"), "{gear}");
+    assert!(power.contains("| `NOISY_2` | `GearChanged`, `PowerChanged` | — |"), "{power}");
+}
+
+#[test]
+fn event_table_is_empty_for_a_kind_nothing_takes() {
+    let table = render::event_table(CAMERA_FEATURES, Kind::PowerChanged);
+
+    assert!(table.lines().count() == 2, "header only, got:\n{table}");
+}
+
+/// Only the features and rules that react to this kind appear.
+#[test]
+fn event_flowchart_draws_one_kind_and_its_features() {
+    let declared = render::event_flowchart(CAMERA_FEATURES, Kind::GearChanged);
 
     assert!(declared.contains(r#"ev_GearChanged["GearChanged"] --> ft_Camera["Camera"]"#));
     assert!(
         declared.contains(
-            r#"ft_Camera["Camera"] -->|"GearIsReverse"| ac_Camera_ShowCamera["ShowCamera"]"#
+            r#"ft_Camera["Camera"] -->|"CAMERA_1<br/>GearIsReverse"| ac_Camera_ShowCamera["ShowCamera"]"#
         ),
         "{declared}"
     );
+    assert!(!declared.contains("ft_Overlay"), "{declared}");
+    assert!(!declared.contains("ev_SpeedChanged"), "{declared}");
 }
 
 /// An action node id carries its feature: two features that name an effect
 /// alike are drawing two different effects, so the nodes must not merge.
 #[test]
-fn io_flowchart_scopes_action_nodes_to_their_feature() {
-    let declared = render::io_flowchart(&[&Camera, &Noisy]);
+fn event_flowchart_scopes_action_nodes_to_their_feature() {
+    let declared = render::event_flowchart(&[&Camera, &Noisy], Kind::GearChanged);
 
     assert!(declared.contains("ac_Camera_ShowCamera"), "{declared}");
     assert!(declared.contains("ac_Noisy_ShowCamera"), "{declared}");
 }
 
-/// The arrow an action arrives by carries the condition that produced it, so
-/// the diagram says why and not only whether.
+/// An arrow names the rule that produced the action, then its guard.
 #[test]
-fn io_flowchart_labels_arrows_with_their_guard() {
-    let declared = render::io_flowchart(&[&Camera]);
+fn event_flowchart_labels_arrows_with_their_rule_and_guard() {
+    let declared = render::event_flowchart(&[&Camera], Kind::GearChanged);
 
     assert!(
-        declared.contains(r#"ft_Camera["Camera"] -->|else| ac_Camera_HideCamera["HideCamera"]"#),
+        declared.contains(
+            r#"ft_Camera["Camera"] -->|"CAMERA_2<br/>else"| ac_Camera_HideCamera["HideCamera"]"#
+        ),
         "{declared}"
     );
 }
 
-/// An unconditional rule's arrow carries no label at all.
+/// An unconditional rule's arrow carries its id and nothing else.
 #[test]
-fn io_flowchart_leaves_an_unconditional_arrow_bare() {
-    let declared = render::io_flowchart(&[&Always]);
+fn event_flowchart_labels_an_unconditional_arrow_with_the_id_alone() {
+    let declared = render::event_flowchart(&[&Always], Kind::PowerChanged);
 
     assert!(
-        declared.contains(r#"ft_Always["Always"] --> ac_Always_UpdateOverlay["UpdateOverlay"]"#),
+        declared.contains(
+            r#"ft_Always["Always"] -->|"ALWAYS_1"| ac_Always_UpdateOverlay["UpdateOverlay"]"#
+        ),
         "{declared}"
+    );
+}
+
+/// A node id may not carry punctuation — mermaid ends the identifier at `(`
+/// and fails to parse the line. The quoted label keeps it.
+#[test]
+fn event_flowchart_folds_punctuation_out_of_node_ids() {
+    let declared = render::event_flowchart(&[&Payload], Kind::GearChanged);
+
+    assert!(
+        declared.contains(r#"ac_Payload_Show_7_["Show(7)"]"#),
+        "{declared}"
+    );
+    assert!(!declared.contains("ac_Payload_Show(7)"), "{declared}");
+}
+
+#[test]
+fn event_flowchart_is_bare_for_a_kind_nothing_takes() {
+    assert_eq!(
+        render::event_flowchart(CAMERA_FEATURES, Kind::PowerChanged),
+        "flowchart LR\n"
     );
 }
 

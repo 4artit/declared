@@ -4,7 +4,7 @@
 //! [`crate::feature`] ones read a list of [`AnyFeature`].
 
 use alloc::format;
-use alloc::string::{String, ToString};
+use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt::Write as _;
 
@@ -15,7 +15,7 @@ use crate::{Domain, Enumerable, MachineSpec};
 
 /// Builds a mermaid `stateDiagram-v2` from a transition table.
 ///
-/// Named for what it draws, like [`io_flowchart`]: in this module a
+/// Named for what it draws, like [`event_flowchart`]: in this module a
 /// `*_diagram`/`*_flowchart` returns mermaid source and a `*_table` returns
 /// markdown.
 ///
@@ -176,7 +176,7 @@ pub fn rule_table<D: Domain>(features: &[&dyn AnyFeature<D>]) -> String {
                 f.name(),
                 r.id,
                 join_or_dash(r.when),
-                guard_cell(&rows, i),
+                guard_cell(&r.guard, is_fallback(&rows, i)),
                 join_names(&r.emit),
             );
         }
@@ -184,38 +184,99 @@ pub fn rule_table<D: Domain>(features: &[&dyn AnyFeature<D>]) -> String {
     s
 }
 
-/// Draws a mermaid flowchart of events → features → actions.
+// ─────────────────────────────────────────── one event at a time
+
+/// Tabulates one event kind's rules, across every feature that reacts to it.
 ///
 /// - `features`: the feature list to render.
+/// - `kind`: the event kind to select rows for.
 ///
-/// Returns the diagram source. The guard of the rule that produces an action
-/// labels the arrow to it, so the diagram says *why* an action is emitted and
-/// not only that it can be. Action node ids carry the feature name because an
-/// action belongs to one feature: two features that happen to name an effect
-/// alike are drawing two different effects.
-pub fn io_flowchart<D: Domain>(features: &[&dyn AnyFeature<D>]) -> String {
-    let mut s = String::from("flowchart LR\n");
+/// Returns a markdown table, empty of rows if nothing reacts to `kind`. Row
+/// order is dispatch order. A rule reacting to several kinds appears under each
+/// of them, which the `when` column shows.
+pub fn event_table<D: Domain>(features: &[&dyn AnyFeature<D>], kind: D::EventKind) -> String {
+    let mut s =
+        String::from("| feature | rule | when | guard | emits |\n|---|---|---|---|---|\n");
     for f in features {
-        let name = f.name();
-        for k in f.handles() {
-            let _ = writeln!(s, "    ev_{k:?}[\"{k:?}\"] --> ft_{name}[\"{name}\"]");
-        }
-        let rows = f.rows();
-        for (i, r) in rows.iter().enumerate() {
-            let label = match (r.guard.is_empty(), is_fallback(&rows, i)) {
-                (false, _) => format!("|\"{}\"|", r.guard),
-                (true, true) => "|else|".to_string(),
-                (true, false) => String::new(),
+        // Every selected row reacts to `kind`, so an unguarded one is a
+        // fallback exactly when it is not the feature's first here.
+        let mut seen = false;
+        for r in f.rows().iter().filter(|r| r.when.contains(&kind)) {
+            let unknown = if r.unknown == OnUnknown::Allow {
+                " (unknown=Allow)"
+            } else {
+                ""
             };
-            for a in &r.emit {
-                let _ = writeln!(
-                    s,
-                    "    ft_{name}[\"{name}\"] -->{label} ac_{name}_{a}[\"{a}\"]"
-                );
-            }
+            let _ = writeln!(
+                s,
+                "| `{}` | `{}` | {} | {}{unknown} | {} |",
+                f.name(),
+                r.id,
+                join_or_dash(r.when),
+                guard_cell(&r.guard, seen),
+                join_names(&r.emit),
+            );
+            seen = true;
         }
     }
     s
+}
+
+/// Draws one event kind's path through the controller: the event, the features
+/// that react to it, and the actions their rules emit.
+///
+/// - `features`: the feature list to render.
+/// - `kind`: the event kind to draw.
+///
+/// Returns the diagram source, holding nothing but the header if no feature
+/// reacts to `kind`. Priority is not drawn; [`event_table`] is what orders the
+/// rules.
+pub fn event_flowchart<D: Domain>(features: &[&dyn AnyFeature<D>], kind: D::EventKind) -> String {
+    let mut s = String::from("flowchart LR\n");
+    for f in features {
+        let name = f.name();
+        let rows = f.rows();
+        if !rows.iter().any(|r| r.when.contains(&kind)) {
+            continue;
+        }
+        let ev = node_id(&format!("ev_{kind:?}"));
+        let ft = node_id(&format!("ft_{name}"));
+        let _ = writeln!(s, "    {ev}[\"{kind:?}\"] --> {ft}[\"{name}\"]");
+        let mut seen = false;
+        for r in rows.iter().filter(|r| r.when.contains(&kind)) {
+            let label = edge_label(r.id, &r.guard, seen);
+            for a in &r.emit {
+                let ac = node_id(&format!("ac_{name}_{a}"));
+                let _ = writeln!(s, "    {ft}[\"{name}\"] -->|\"{label}\"| {ac}[\"{a}\"]");
+            }
+            seen = true;
+        }
+    }
+    s
+}
+
+/// Folds a `Debug` rendering into a mermaid node identifier, replacing every
+/// character mermaid could read as syntax. Identifiers only — a label is
+/// quoted and keeps the original text.
+fn node_id(raw: &str) -> String {
+    raw.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect()
+}
+
+/// The label on a rule's arrow: its id, then the guard it decides by. An
+/// unconditional rule is its id alone.
+///
+/// - `id`: the rule's [`crate::feature::Rule::id`].
+/// - `guard`: its rendered guard, empty for an unguarded rule.
+/// - `fallback`: whether an earlier rule shadows this one. The caller's to
+///   decide, since a whole-table view and a per-event one differ on it.
+fn edge_label(id: &str, guard: &str, fallback: bool) -> String {
+    match (guard.is_empty(), fallback) {
+        (false, _) => format!("{id}<br/>{guard}"),
+        (true, true) => format!("{id}<br/>else"),
+        (true, false) => id.into(),
+    }
 }
 
 /// Whether an unguarded rule is a fallback rather than an unconditional one:
@@ -228,12 +289,13 @@ fn is_fallback<D: Domain>(rows: &[RuleRow<D>], i: usize) -> bool {
 }
 
 /// The guard column of one rule: the expression, `else` for a fallback, or a
-/// dash for a rule that is genuinely unconditional.
-fn guard_cell<D: Domain>(rows: &[RuleRow<D>], i: usize) -> String {
-    match (rows[i].guard.is_empty(), is_fallback(rows, i)) {
-        (false, _) => format!("`{}`", rows[i].guard),
-        (true, true) => "else".to_string(),
-        (true, false) => "—".to_string(),
+/// dash for a rule that is genuinely unconditional. `fallback` is the caller's
+/// to decide, as in [`edge_label`].
+fn guard_cell(guard: &str, fallback: bool) -> String {
+    match (guard.is_empty(), fallback) {
+        (false, _) => format!("`{guard}`"),
+        (true, true) => "else".into(),
+        (true, false) => "—".into(),
     }
 }
 

@@ -189,11 +189,13 @@ first rule whose guard holds is the one that runs, so a rule with no guard is a
 fallback.
 
 {rules}
-## Events, features and actions
+## By event
 
-```mermaid
-{flow}```
+One signal at a time, which is the shape a requirement is written in. A rule
+covering several kinds appears under each of them; the `when` column is what
+says so.
 
+{by_event}
 ## Folding
 
 Folding and unfolding are observable states, so this one is a state machine.
@@ -213,7 +215,7 @@ Folding and unfolding are observable states, so this one is a state machine.
 ",
         table = render::io_table(FEATURES),
         rules = render::rule_table(FEATURES),
-        flow = render::io_flowchart(FEATURES),
+        by_event = by_event(),
         diagram = fold::diagram(),
         unhandled = unhandled,
         holes = cov.holes,
@@ -221,6 +223,29 @@ Folding and unfolding are observable states, so this one is a state machine.
         dup = dup,
         dup_ids = dup_ids,
     )
+}
+
+/// One section per event kind, in `events!` declaration order. `FoldSm` runs on
+/// the same events but is a machine rather than a feature, so its rows are not
+/// here; the folding diagram below is what covers it. A kind only it reacts to
+/// therefore shows up as "nothing reacts", which is why this says *feature*.
+fn by_event() -> String {
+    let mut s = String::new();
+    for &kind in Mirrors::all_kinds() {
+        s.push_str(&format!("### {kind:?}\n\n"));
+
+        if !FEATURES.iter().any(|f| f.handles().contains(&kind)) {
+            s.push_str("No feature reacts to this event.\n\n");
+            continue;
+        }
+
+        s.push_str(&render::event_table(FEATURES, kind));
+        s.push_str(&format!(
+            "\n```mermaid\n{}```\n\n",
+            render::event_flowchart(FEATURES, kind)
+        ));
+    }
+    s
 }
 
 /// Applies the value a callback carried. A real service would do this.

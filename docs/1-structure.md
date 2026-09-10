@@ -24,7 +24,7 @@ flowchart TD
 
     subgraph report[" 보고 "]
         V["verify.rs<br/>coverage · duplicate_* · unhandled_*"]
-        R["render.rs<br/>state_diagram · io_flowchart · *_table"]
+        R["render.rs<br/>state_diagram · event_flowchart · *_table"]
     end
 
     L --> E
