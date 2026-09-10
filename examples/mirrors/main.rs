@@ -1,13 +1,13 @@
-//! A side mirror controller split by feature, mixing both layers.
+//! A side mirror controller split by feature.
 //!
 //!     cargo run --example mirrors
 //!
-//! | File | Layer | Why |
-//! |---|---|---|
-//! | `guards.rs` | both | The conditions either layer decides by |
-//! | `heating.rs` | feature | Follows the defog signal |
-//! | `dimming.rs` | feature | A function of power and gear |
-//! | `fold.rs` | machine | Folding and unfolding are observable states |
+//! | File | Why |
+//! |---|---|
+//! | `guards.rs` | The conditions the controller decides by |
+//! | `heating.rs` | Follows the defog signal |
+//! | `dimming.rs` | A function of power and gear |
+//! | `fold.rs` | Folds and unfolds, reading the motor's reported position |
 //!
 //! A ticket about folding is answered by `fold.rs` alone. `handle_event` routes
 //! and does not decide.
@@ -18,11 +18,10 @@ mod guards;
 mod heating;
 
 use declared::feature::AnyFeature;
-use declared::machine::{self, Machine};
 use declared::{Domain, HasKind, render, verify};
 
 use dimming::Dimming;
-use fold::FoldSm;
+use fold::Fold;
 use heating::Heating;
 
 declared::events! {
@@ -63,34 +62,19 @@ impl Domain for Mirrors {
 /// The features, in dispatch order. The router walks this list, so what the
 /// document draws and what actually runs cannot come apart. They are trait
 /// objects because each feature has its own action type.
-const FEATURES: &[&dyn AnyFeature<Mirrors>] = &[&Heating, &Dimming];
+const FEATURES: &[&dyn AnyFeature<Mirrors>] = &[&Heating, &Dimming, &Fold];
 
-/// Holds only the machine: a feature is a table, not an object, so there is no
-/// feature instance for the controller to keep.
-struct Controller {
-    fold: Machine<FoldSm>,
-}
-
-impl Default for Controller {
-    fn default() -> Self {
-        Self {
-            fold: fold::machine(),
-        }
+/// Routes and does not decide. A feature is a table rather than an object, so
+/// there is no controller instance to keep — this is a function.
+fn handle_event(ev: &Event, world: &mut World) {
+    // The one global gate. It says why it dropped the event.
+    if !world.power_on && requires_power(ev.kind()) {
+        println!("  (dropped: powered off) {ev:?}");
+        return;
     }
-}
 
-impl Controller {
-    fn handle_event(&mut self, ev: &Event, world: &mut World) {
-        // The one global gate. It says why it dropped the event.
-        if !world.power_on && requires_power(ev.kind()) {
-            println!("  (dropped: powered off) {ev:?}");
-            return;
-        }
-
-        for f in FEATURES {
-            f.dispatch(ev, world);
-        }
-        machine::dispatch(&mut self.fold, ev, world);
+    for f in FEATURES {
+        f.dispatch(ev, world);
     }
 }
 
@@ -102,7 +86,6 @@ fn requires_power(kind: Kind) -> bool {
 // ─────────────────────────────────────────── run
 
 fn main() {
-    let mut c = Controller::default();
     let mut w = World {
         fold_position: 1.0, // starts unfolded
         ..Default::default()
@@ -125,7 +108,7 @@ fn main() {
     for (desc, ev) in steps {
         println!("{desc}");
         apply_signal(ev, &mut w);
-        c.handle_event(ev, &mut w);
+        handle_event(ev, &mut w);
     }
 
     golden(
@@ -137,19 +120,14 @@ fn main() {
 
 /// The whole controller, drawn from its declarations.
 fn document() -> String {
-    // Both layers at once: the machine's events are not holes.
-    let by_fold = fold::handled_kinds();
-    let unhandled = verify::unhandled_kinds(FEATURES, &[&by_fold]);
+    // Expected to list `FoldPositionChanged` and `UserChanged`: the first is a
+    // signal the controller keeps rather than decides on, the second is reacted
+    // to by nobody. Both are visible in the `By event` sections below.
+    let unhandled = verify::unhandled_kinds(FEATURES);
 
-    // `unhandled` is expected to list `UserChanged`, which nothing reacts to.
-    // A defective fold table is not expected, so it fails the run rather than
-    // being written into the document as a line claiming otherwise.
-    let cov = fold::coverage();
-    assert!(cov.is_clean(), "{cov:?}");
-
-    // Both layers at once again, for the other thing they share: node names are
-    // unique per domain, and only a check spanning both can say so.
-    let dup = verify::duplicate_node_names(FEATURES, &[&fold::guard_nodes()]);
+    // Node names are unique per domain: `Memo` keys on the name, so two node
+    // types answering to one would make the second inherit the first's answer.
+    let dup = verify::duplicate_node_names(FEATURES);
     assert!(dup.is_empty(), "guard names used by two node types: {dup:?}");
 
     // The id `dispatch` hands back carries no feature name, so it has to name
@@ -162,6 +140,7 @@ fn document() -> String {
     let dead: Vec<String> = [
         format!("{:?}", verify::unemitted_actions::<Heating>()),
         format!("{:?}", verify::unemitted_actions::<Dimming>()),
+        format!("{:?}", verify::unemitted_actions::<Fold>()),
     ]
     .into_iter()
     .filter(|s| s != "[]")
@@ -178,8 +157,8 @@ declarations, so it cannot drift from the code — regenerate with
 
 ## Features
 
-Stateless features, one per file. `handles` and `emits` are read off the rules
-below, so a feature cannot react to or emit anything this table omits.
+One per file. `handles` and `emits` are read off the rules below, so a feature
+cannot react to or emit anything this table omits.
 
 {table}
 ## Rules
@@ -196,46 +175,34 @@ covering several kinds appears under each of them; the `when` column is what
 says so.
 
 {by_event}
-## Folding
-
-Folding and unfolding are observable states, so this one is a state machine.
-
-```mermaid
-{diagram}```
-
 ## Checks
 
 | Check | Result |
 |---|---|
 | Events nothing handles | {unhandled:?} |
-| Holes in the fold table | {holes:?} |
-| Fold table is clean | {clean} |
 | Guard names used by two node types | {dup:?} |
 | Rule ids used twice | {dup_ids:?} |
 ",
         table = render::io_table(FEATURES),
         rules = render::rule_table(FEATURES),
         by_event = by_event(),
-        diagram = fold::diagram(),
         unhandled = unhandled,
-        holes = cov.holes,
-        clean = cov.is_clean(),
         dup = dup,
         dup_ids = dup_ids,
     )
 }
 
-/// One section per event kind, in `events!` declaration order. `FoldSm` runs on
-/// the same events but is a machine rather than a feature, so its rows are not
-/// here; the folding diagram below is what covers it. A kind only it reacts to
-/// therefore shows up as "nothing reacts", which is why this says *feature*.
+/// One section per event kind, in `events!` declaration order. A kind nothing
+/// reacts to still gets a section: `FoldPositionChanged` is a signal the
+/// controller keeps rather than decides on, and saying so where a reader looks
+/// it up is worth more than leaving the section out.
 fn by_event() -> String {
     let mut s = String::new();
     for &kind in Mirrors::all_kinds() {
         s.push_str(&format!("### {kind:?}\n\n"));
 
         if !FEATURES.iter().any(|f| f.handles().contains(&kind)) {
-            s.push_str("No feature reacts to this event.\n\n");
+            s.push_str("Nothing reacts to this event.\n\n");
             continue;
         }
 

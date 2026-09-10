@@ -4,12 +4,10 @@ use core::fmt::Debug;
 
 /// A type whose values can all be listed at compile time.
 ///
-/// Required by [`super::MachineSpec::Tag`] and [`super::Domain::EventKind`], whose
-/// full value lists [`super::verify::coverage`] needs to walk `(state × event
-/// kind)` exhaustively. Implementing this by hand is supported, but nothing
-/// then verifies `ALL` stays complete as variants are added — prefer
-/// [`tags!`](crate::tags!) or [`events!`](crate::events!), which generate the
-/// enum and `ALL` together.
+/// Required by [`super::Domain::EventKind`], whose full value list the reports
+/// walk. Implementing it by hand is supported, but nothing then verifies `ALL`
+/// stays complete as variants are added — prefer [`events!`](crate::events!),
+/// which generates the enum and `ALL` together.
 pub trait Enumerable: Copy + Eq + Debug + 'static {
     /// Every value of this type.
     const ALL: &'static [Self];
@@ -42,50 +40,11 @@ pub trait Enumerable: Copy + Eq + Debug + 'static {
 /// If the event type comes from another crate the orphan rule forbids a direct
 /// impl; wrap it in a newtype and implement this for the wrapper.
 pub trait HasKind {
-    /// The payload-free kind tag that edges match on.
+    /// The payload-free kind tag that rules match on.
     type Kind: Enumerable;
 
     /// Reports this event's kind.
     fn kind(&self) -> Self::Kind;
-}
-
-/// Declares a state tag enum together with its [`Enumerable`] impl.
-///
-/// Derives `Copy + Clone + PartialEq + Eq + Debug` on the enum and forwards
-/// any outer attributes.
-///
-/// ```
-/// declared::tags! {
-///     pub enum Tag {
-///         Locked,
-///         Unlocked,
-///     }
-/// }
-/// ```
-#[macro_export]
-macro_rules! tags {
-    (
-        $(#[$meta:meta])*
-        $vis:vis enum $Name:ident {
-            $(
-                $(#[$vmeta:meta])*
-                $variant:ident
-            ),* $(,)?
-        }
-    ) => {
-        $(#[$meta])*
-        #[derive(Copy, Clone, PartialEq, Eq, Debug)]
-        $vis enum $Name {
-            $(
-                $(#[$vmeta])*
-                $variant,
-            )*
-        }
-
-        impl $crate::Enumerable for $Name {
-            const ALL: &'static [Self] = &[$(Self::$variant),*];
-        }
-    };
 }
 
 /// Declares an event enum and its kind enum from a single list of variants.

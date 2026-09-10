@@ -6,13 +6,14 @@ declarations, so it cannot drift from the code — regenerate with
 
 ## Features
 
-Stateless features, one per file. `handles` and `emits` are read off the rules
-below, so a feature cannot react to or emit anything this table omits.
+One per file. `handles` and `emits` are read off the rules below, so a feature
+cannot react to or emit anything this table omits.
 
 | feature | handles | emits |
 |---|---|---|
 | `Heating` | `DefogChanged` | `On`, `Off` |
 | `Dimming` | `PowerChanged`, `GearChanged` | `On`, `Off` |
+| `Fold` | `PowerChanged`, `SpeedChanged` | `Fold`, `Unfold` |
 
 ## Rules
 
@@ -26,6 +27,9 @@ fallback.
 | `Heating` | `HEAT_OFF` | `DefogChanged` | else | `Off` |
 | `Dimming` | `DIM_ON` | `PowerChanged`, `GearChanged` | `PowerOn && !GearReverse` | `On` |
 | `Dimming` | `DIM_OFF` | `PowerChanged`, `GearChanged` | else | `Off` |
+| `Fold` | `FOLD_ON_POWER_OFF` | `PowerChanged` | `PowerOff && SpeedAllowsFold && AtUnfolded` | `Fold` |
+| `Fold` | `UNFOLD_ON_POWER_ON` | `PowerChanged` | `PowerOn && AtFolded` | `Unfold` |
+| `Fold` | `UNFOLD_ON_SPEED` | `SpeedChanged` | `SpeedForcesUnfold && AtFolded` | `Unfold` |
 
 ## By event
 
@@ -53,12 +57,17 @@ flowchart LR
 |---|---|---|---|---|
 | `Dimming` | `DIM_ON` | `PowerChanged`, `GearChanged` | `PowerOn && !GearReverse` | `On` |
 | `Dimming` | `DIM_OFF` | `PowerChanged`, `GearChanged` | else | `Off` |
+| `Fold` | `FOLD_ON_POWER_OFF` | `PowerChanged` | `PowerOff && SpeedAllowsFold && AtUnfolded` | `Fold` |
+| `Fold` | `UNFOLD_ON_POWER_ON` | `PowerChanged` | `PowerOn && AtFolded` | `Unfold` |
 
 ```mermaid
 flowchart LR
     ev_PowerChanged["PowerChanged"] --> ft_Dimming["Dimming"]
     ft_Dimming["Dimming"] -->|"DIM_ON<br/>PowerOn && !GearReverse"| ac_Dimming_On["On"]
     ft_Dimming["Dimming"] -->|"DIM_OFF<br/>else"| ac_Dimming_Off["Off"]
+    ev_PowerChanged["PowerChanged"] --> ft_Fold["Fold"]
+    ft_Fold["Fold"] -->|"FOLD_ON_POWER_OFF<br/>PowerOff && SpeedAllowsFold && AtUnfolded"| ac_Fold_Fold["Fold"]
+    ft_Fold["Fold"] -->|"UNFOLD_ON_POWER_ON<br/>PowerOn && AtFolded"| ac_Fold_Unfold["Unfold"]
 ```
 
 ### GearChanged
@@ -77,39 +86,29 @@ flowchart LR
 
 ### SpeedChanged
 
-No feature reacts to this event.
+| feature | rule | when | guard | emits |
+|---|---|---|---|---|
+| `Fold` | `UNFOLD_ON_SPEED` | `SpeedChanged` | `SpeedForcesUnfold && AtFolded` | `Unfold` |
+
+```mermaid
+flowchart LR
+    ev_SpeedChanged["SpeedChanged"] --> ft_Fold["Fold"]
+    ft_Fold["Fold"] -->|"UNFOLD_ON_SPEED<br/>SpeedForcesUnfold && AtFolded"| ac_Fold_Unfold["Unfold"]
+```
 
 ### FoldPositionChanged
 
-No feature reacts to this event.
+Nothing reacts to this event.
 
 ### UserChanged
 
-No feature reacts to this event.
+Nothing reacts to this event.
 
-
-## Folding
-
-Folding and unfolding are observable states, so this one is a state machine.
-
-```mermaid
-stateDiagram-v2
-    [*] --> Unfolded
-    Folding : Folding<br/>entry / Fold
-    Unfolding : Unfolding<br/>entry / Unfold
-    Unfolded --> Folding: PowerChanged<br/>[PowerOff && SpeedAllowsFold]
-    Folding --> Folded: FoldPositionChanged<br/>[AtFolded]
-    Folded --> Unfolding: PowerChanged<br/>[PowerOn]
-    Folded --> Unfolding: SpeedChanged<br/>[SpeedForcesUnfold]
-    Unfolding --> Unfolded: FoldPositionChanged<br/>[AtUnfolded]
-```
 
 ## Checks
 
 | Check | Result |
 |---|---|
-| Events nothing handles | [UserChanged] |
-| Holes in the fold table | [] |
-| Fold table is clean | true |
+| Events nothing handles | [FoldPositionChanged, UserChanged] |
 | Guard names used by two node types | [] |
 | Rule ids used twice | [] |

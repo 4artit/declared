@@ -17,8 +17,8 @@ use super::Cond;
 /// through [`Cx`].
 pub trait CondNode<D: Domain>: Sync + Any {
     /// The name shown in diagrams and logs, and the [`Memo`] cache key.
-    /// **Must be unique within a machine** — [`crate::verify::coverage`]
-    /// verifies this.
+    /// **Must be unique within a domain** —
+    /// [`crate::verify::duplicate_node_names`] verifies this.
     fn name(&self) -> &'static str;
 
     /// Evaluates the guard against `cx`. Must not modify the world.
@@ -43,9 +43,9 @@ impl<'a, D: Domain> Cx<'a, D> {
     }
 }
 
-/// Guard evaluation cache, valid for one [`crate::machine::dispatch`] or
-/// [`crate::feature::AnyFeature::dispatch`] call, so a node shared by several rows is
-/// evaluated only once per event.
+/// Guard evaluation cache, valid for one
+/// [`crate::feature::AnyFeature::dispatch`] call, so a node shared by several
+/// rows is evaluated only once per event.
 #[derive(Default)]
 pub struct Memo {
     cache: RefCell<Vec<(&'static str, Cond)>>,
@@ -126,8 +126,8 @@ impl<D: Domain> Expr<D> {
 
     /// Collects `(name, type id)` for every node this expression references.
     ///
-    /// - `out`: pairs are appended here, for [`crate::verify::coverage`]'s
-    ///   name-uniqueness check.
+    /// - `out`: pairs are appended here, for
+    ///   [`crate::verify::duplicate_node_names`].
     pub fn node_ids(&self, out: &mut Vec<(&'static str, core::any::TypeId)>) {
         match self {
             Self::Always => {}
@@ -179,7 +179,7 @@ macro_rules! cond_node {
 /// Builds a guard expression. Supports `&&` chains and a leading `!`.
 ///
 /// `||` is left out on purpose: two reasons to take a row are two rows, each
-/// with its own [`crate::machine::Edge::id`].
+/// with its own [`crate::feature::Rule::id`].
 #[macro_export]
 macro_rules! check {
     () => { &$crate::guard::Expr::Always };

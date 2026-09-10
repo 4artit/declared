@@ -6,10 +6,6 @@
 //! does is readable off its table, which is what the renderers and the coverage
 //! helpers are derived from.
 //!
-//! This is [`crate::machine::Edge`] with the state axis removed: no `from`, no
-//! `goto`, and `when` is a set because a feature rule routinely covers several
-//! kinds at once.
-//!
 //! Each feature names its own [`Feature::Action`], so its [`Feature::perform`]
 //! is exhaustive over exactly the effects it declares. [`AnyFeature`] is the one
 //! uniform face a controller needs to walk them all despite that.
@@ -32,7 +28,7 @@ use crate::{Domain, WorldOf, EventOf, HasKind, KindOf};
 /// `A` is the declaring feature's own action type, not a controller-wide one.
 pub struct Rule<D: Domain, A: 'static> {
     /// Stable identifier, for requirement tracing and golden diffs, like
-    /// [`crate::machine::Edge::id`]. It must survive reordering of the table.
+    /// golden diffs. It must survive reordering of the table.
     ///
     /// Unique across the whole controller, not just this feature:
     /// [`AnyFeature::dispatch`] returns it with no feature name attached, so a
@@ -55,14 +51,13 @@ pub struct Rule<D: Domain, A: 'static> {
 /// handler, so a feature can do nothing the table does not say.
 pub trait Feature: Sync + 'static {
     /// The vocabulary this feature works in. An associated type rather than a
-    /// parameter, like [`crate::MachineSpec::Domain`]: a feature belongs to one
-    /// controller.
+    /// parameter rather than a parameter: a feature belongs to one controller.
     type Domain: Domain;
 
     /// This feature's effects. Its own type, so [`Feature::perform`] below is
     /// exhaustive over them and adding one is a compile error here and nowhere
-    /// else. Bounded exactly like [`crate::MachineSpec::Action`];
-    /// [`crate::verify::unemitted_actions`] asks for the rest where it needs it.
+    /// else. [`crate::verify::unemitted_actions`] asks for [`crate::Enumerable`]
+    /// where it needs it.
     type Action: Copy + core::fmt::Debug + 'static;
 
     /// Display name, used in tables and diagrams.
@@ -135,9 +130,8 @@ pub trait AnyFeature<D: Domain>: Sync {
     /// Takes the first rule that matches `ev` and carries out its actions.
     ///
     /// Returns the [`Rule::id`] of the rule that ran, or `None` if none
-    /// matched. The id alone, rather than a machine-side [`crate::machine::Taken`]:
-    /// this is reached through `&dyn AnyFeature`, which has no `F::Action` left
-    /// to hand back.
+    /// matched. The id alone: this is reached through `&dyn AnyFeature`, which
+    /// has no `F::Action` left to hand back.
     ///
     /// - `ev`: the event to dispatch.
     /// - `world`: the outside world, read by the guards and mutated by the

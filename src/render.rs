@@ -1,7 +1,7 @@
 //! Diagrams and tables derived from a controller's declaration.
 //!
-//! The [`crate::machine`] functions read a transition table; the
-//! [`crate::feature`] ones read a list of [`AnyFeature`].
+//! Everything here reads a list of [`AnyFeature`] and nothing else, so a
+//! document cannot disagree with what the router walks.
 
 use alloc::format;
 use alloc::string::String;
@@ -10,128 +10,9 @@ use core::fmt::Write as _;
 
 use crate::feature::{AnyFeature, RuleRow};
 use crate::guard::OnUnknown;
-use crate::machine::{Edge, Goto, Ignore, State};
-use crate::{Domain, Enumerable, MachineSpec};
+use crate::Domain;
 
-/// Builds a mermaid `stateDiagram-v2` from a transition table.
-///
-/// Named for what it draws, like [`event_flowchart`]: in this module a
-/// `*_diagram`/`*_flowchart` returns mermaid source and a `*_table` returns
-/// markdown.
-///
-/// - `initial`: the machine's starting state.
-/// - `edges`: the transitions to draw. [`Goto::Internal`] edges are omitted —
-///   use [`internal_table`] for those.
-/// - `states`: entry/exit actions, drawn as state descriptions.
-///
-/// Returns the diagram source. Converts to PlantUML almost line for line;
-/// see `scripts/mermaid_to_plantuml.sh`.
-pub fn state_diagram<M: MachineSpec>(
-    initial: M::Tag,
-    edges: &'static [Edge<M>],
-    states: &'static [State<M>],
-) -> String {
-    let mut s = String::from("stateDiagram-v2\n");
-    let _ = writeln!(s, "    [*] --> {initial:?}");
 
-    // Declaration order, not the order the nodes were passed in.
-    for &tag in <M::Tag as Enumerable>::ALL {
-        let Some(st) = states.iter().find(|s| s.tag == tag) else {
-            continue;
-        };
-        let mut lines: Vec<String> = Vec::new();
-        if !st.entry.is_empty() {
-            lines.push(format!("entry / {}", join_actions(st.entry)));
-        }
-        if !st.exit.is_empty() {
-            lines.push(format!("exit / {}", join_actions(st.exit)));
-        }
-        if !lines.is_empty() {
-            // A mermaid description replaces the node's label, so it has to repeat
-            // the state name.
-            let _ = writeln!(s, "    {tag:?} : {tag:?}<br/>{}", lines.join("<br/>"));
-        }
-    }
-
-    for e in edges {
-        let Goto::To(next) = e.goto else { continue };
-        let guard = e.check.render();
-        let unknown = if e.unknown == OnUnknown::Allow {
-            "<br/>unknown=Allow"
-        } else {
-            ""
-        };
-        let emit = if e.emit.is_empty() {
-            String::new()
-        } else {
-            format!("<br/>/ {}", join_actions(e.emit))
-        };
-        for from in e.from.expand() {
-            let label = if guard.is_empty() {
-                format!("{:?}", e.when)
-            } else {
-                format!("{:?}<br/>[{guard}]", e.when)
-            };
-            let _ = writeln!(s, "    {from:?} --> {next:?}: {label}{unknown}{emit}");
-        }
-    }
-
-    s
-}
-
-/// Tabulates the transitions that do not change state ([`Goto::Internal`]).
-///
-/// - `edges`: the transition table to scan.
-///
-/// Returns a markdown table.
-pub fn internal_table<M: MachineSpec>(edges: &'static [Edge<M>]) -> String {
-    let mut s =
-        String::from("| state | event | guard | actions | edge id |\n|---|---|---|---|---|\n");
-    for e in edges {
-        if !matches!(e.goto, Goto::Internal) {
-            continue;
-        }
-        let guard = e.check.render();
-        for from in e.from.expand() {
-            let _ = writeln!(
-                s,
-                "| `{from:?}` | `{:?}` | `{}` | {} | `{}` |",
-                e.when,
-                if guard.is_empty() { "—" } else { &guard },
-                join_actions(e.emit),
-                e.id
-            );
-        }
-    }
-    s
-}
-
-/// Tabulates the deliberately unhandled combinations and their reasons.
-///
-/// - `ignores`: the ignore list to render.
-///
-/// Returns a markdown table.
-pub fn ignore_table<M: MachineSpec>(ignores: &'static [Ignore<M>]) -> String {
-    let mut s = String::from("| state | event | reason |\n|---|---|---|\n");
-    for i in ignores {
-        for from in i.from.expand() {
-            for kind in i.when {
-                let _ = writeln!(s, "| `{from:?}` | `{kind:?}` | {} |", i.why);
-            }
-        }
-    }
-    s
-}
-
-fn join_actions<A: core::fmt::Debug>(actions: &[A]) -> String {
-    actions
-        .iter()
-        .map(|a| format!("{a:?}"))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-// ─────────────────────────────────────────── feature layer
 
 /// Tabulates what each feature reacts to and emits.
 ///

@@ -21,10 +21,10 @@
 
 ```mermaid
 flowchart LR
-    D["선언<br/>STATES · EDGES · RULES"]
-    D --> R["실행<br/>machine::dispatch<br/>feature::dispatch"]
-    D --> G["다이어그램<br/>render"]
-    D --> V["누락 검사<br/>verify"]
+    D["선언<br/>RULES"]
+    D --> R["실행<br/>AnyFeature::dispatch"]
+    D --> G["문서<br/>render"]
+    D --> V["보고<br/>verify"]
 ```
 
 ## 어휘
@@ -35,18 +35,17 @@ flowchart LR
 |---|---|
 | `Domain` | 한 컨트롤러가 공유하는 것: 이벤트 타입, 이벤트 종류, 세상 |
 | `World` | 컨트롤러가 읽고 바꾸는 대상. 가드는 읽기만, `perform`만 쓰기 |
-| `Feature` | 상태가 없는 층. 규칙(`Rule`) 표 하나가 전부 |
-| `MachineSpec` | 상태가 있는 층. 상태(`State`)·전이(`Edge`)·무시(`Ignore`) 표 |
-| `Machine` | `MachineSpec`을 실제로 돌리는 인스턴스. 현재 태그만 들고 있음 |
-| `Action` | 이벤트에 반응해 내는 효과. 이벤트를 볼 수 있음 |
-| `StateAction` | 상태에 들어가고 나올 때의 효과. 이벤트를 볼 수 없음 |
+| `Feature` | 컨트롤러의 한 관심사. 규칙(`Rule`) 표 하나가 전부 |
+| `Rule` | 표의 한 행. `when` · `check` · `unknown` · `emit` |
+| `Action` | 규칙이 내는 효과. 원인이 된 이벤트를 볼 수 있음 |
 | `Cond` | 가드 판정 결과. `True` / `False` / `Unknown` |
 | `Expr` | 가드 노드를 `&&` · `!` · `||`로 엮은 트리 |
 
-## 두 층을 언제 쓰는가
+## 상태는 어디에 있는가
 
-- **`feature`** — 동작이 과거에 의존하지 않을 때. "지금 세상이 이러면 이걸 한다"
-- **`machine`** — 같은 이벤트가 상태에 따라 다른 뜻을 가질 때. "어디에 있었느냐가 답을 바꾼다"
+전용 층은 없습니다. 같은 이벤트가 상황에 따라 다른 뜻을 갖는다면, 그 상황을
+`World`의 필드로 두고 가드가 읽습니다. 필드를 옮기는 것도 액션이고요.
 
-둘은 `Domain`을 공유하므로 한 컨트롤러 안에 섞어 쓸 수 있습니다.
-[`examples/mirrors`](../examples/mirrors/main.rs)가 그 예입니다.
+[`examples/door_lock`](../examples/door_lock/main.rs)이 그 예입니다 — 위치가
+넷인 잠금장치라 이 방식에 가장 불리하고, 그래서 무엇을 잃는지가 표에 그대로
+보입니다.

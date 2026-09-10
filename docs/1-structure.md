@@ -9,8 +9,8 @@
 ```mermaid
 flowchart TD
     subgraph decl[" 선언 어휘 "]
-        L["lib.rs<br/>Domain · MachineSpec · prelude"]
-        E["enums.rs<br/>Enumerable · HasKind<br/>tags! · events!"]
+        L["lib.rs<br/>Domain · prelude"]
+        E["enums.rs<br/>Enumerable · HasKind<br/>events!"]
     end
 
     subgraph guard[" 판정 "]
@@ -19,46 +19,37 @@ flowchart TD
 
     subgraph run[" 실행 "]
         F["feature.rs<br/>Feature · Rule · AnyFeature"]
-        M["machine/<br/>Machine · Edge · State · Ignore"]
     end
 
     subgraph report[" 보고 "]
-        V["verify.rs<br/>coverage · duplicate_* · unhandled_*"]
-        R["render.rs<br/>state_diagram · event_flowchart · *_table"]
+        V["verify.rs<br/>duplicate_* · unhandled_kinds · unemitted_actions"]
+        R["render.rs<br/>event_* · rule_table · io_table"]
     end
 
     L --> E
     F --> G
-    M --> G
     F --> L
-    M --> L
     V --> F
-    V --> M
     R --> F
-    R --> M
 ```
 
 핵심은 두 가지입니다.
 
-- **`guard`는 어느 층도 모릅니다.** `Domain`에 대해서만 선언되므로 같은 가드
-  노드가 `Edge`와 `Rule` 양쪽을 받칩니다.
+- **`guard`는 기능을 모릅니다.** `Domain`에 대해서만 선언되므로 같은 가드
+  노드가 어느 기능의 `Rule`이든 받칩니다.
 - **`verify`와 `render`는 실행에 관여하지 않습니다.** 표를 읽기만 하며,
-  실행 경로는 이 둘을 부르지 않습니다. 예외는 `Machine::new`가 디버그
-  빌드에서 `verify::coverage`를 한 번 부르는 것뿐입니다.
+  실행 경로는 이 둘을 부르지 않습니다.
 
 ## 파일별 역할
 
 | 파일 | 사는 것 | 성격 |
 |---|---|---|
-| `lib.rs` | `Domain`, `MachineSpec`, `NoAction`, 타입 별칭, `prelude` | 선언 어휘 |
-| `enums.rs` | `Enumerable`, `HasKind`, `tags!`, `events!` | 값 목록을 컴파일 타임에 확보 |
+| `lib.rs` | `Domain`, 타입 별칭, `prelude` | 선언 어휘 |
+| `enums.rs` | `Enumerable`, `HasKind`, `events!` | 값 목록을 컴파일 타임에 확보 |
 | `guard.rs` | `OnUnknown` | 판정 불가일 때의 정책 |
 | `guard/cond.rs` | `Cond` 3값 논리 | 판정 결과 |
 | `guard/node.rs` | `CondNode`, `Cx`, `Memo`, `Expr`, `cond_node!`, `check!` | 가드 노드와 트리 |
-| `feature.rs` | `Feature`, `Rule`, `AnyFeature`, `RuleRow` | 상태 없는 층 |
-| `machine.rs` | `Machine`, `dispatch`, `Taken` | 상태 있는 층의 실행기 |
-| `machine/state.rs` | `State` | 상태 한 줄 |
-| `machine/edge.rs` | `Edge`, `Source`, `Goto`, `Ignore` | 전이 표의 행 |
+| `feature.rs` | `Feature`, `Rule`, `AnyFeature`, `RuleRow` | 규칙 표와 실행기 |
 | `verify.rs` | 검사 전부 | 표를 읽고 결함을 보고 |
 | `render.rs` | 다이어그램·표 생성 | 표를 읽고 문서를 생성 |
 
@@ -71,38 +62,36 @@ flowchart LR
     Dom["Domain<br/>Event · EventKind · World"]
 
     Dom --> Feat["Feature<br/>Action"]
-    Dom --> Spec["MachineSpec<br/>Tag · Action · StateAction"]
     Dom --> Node["CondNode"]
 
     Feat --> Rule["Rule"]
-    Spec --> Edge["Edge"]
-    Spec --> St["State"]
-    Spec --> Ig["Ignore"]
-
     Node --> Expr["Expr"]
     Expr --> Rule
-    Expr --> Edge
 ```
 
 - `Domain`은 **공유되는 것만** 담습니다. 이벤트와 세상입니다.
-- 액션은 공유되지 않습니다. `Feature::Action`과 `MachineSpec::Action`은
-  각자의 것이라, `perform`이 자기 파일의 효과에 대해서만 exhaustive해집니다.
-- `Expr`는 `Domain`에만 매개되므로 `Rule`과 `Edge` 양쪽에 그대로 꽂힙니다.
+- 액션은 공유되지 않습니다. `Feature::Action`은 그 기능의 것이라,
+  `perform`이 자기 파일의 효과에 대해서만 exhaustive해집니다.
+- `Expr`는 `Domain`에만 매개되므로 어느 기능의 `Rule`에든 그대로 꽂힙니다.
 
-## 상태가 있는 것과 없는 것
+## 표는 한 종류입니다
 
-이 구분이 API 모양을 결정합니다.
+상태를 따로 두는 층은 없습니다. 이름 붙은 구성(잠김/열림, 접힘/펼침)을 두는
+컨트롤러는 그것을 `World`의 필드로 두고, **가드가 읽고 액션이 씁니다.** 다른
+모든 것과 같은 방식입니다.
 
-| | 기능(`Feature`) | 머신(`MachineSpec`) |
-|---|---|---|
-| 선언 | `const RULES` | `const STATES` · `EDGES` · `IGNORES` |
-| 런타임 인스턴스 | 없음 | `Machine<M>` (현재 태그를 보관) |
-| 목록으로 묶기 | `&[&dyn AnyFeature<D>]` — `const` 가능 | 구조체 필드로 보관 |
-| 생성 시점 검증 | 없음 | `Machine::new`가 표를 검사 |
+| | |
+|---|---|
+| 선언 | `const RULES` |
+| 런타임 인스턴스 | 없음 — 기능은 표 그 자체 |
+| 목록으로 묶기 | `&[&dyn AnyFeature<D>]` — `const` 가능 |
+| "지금 어디" | `World`의 필드, 가드로 읽음 |
 
-기능은 표 그 자체이므로 인스턴스가 필요 없습니다. 머신은 "지금 어디"를
-들고 있어야 하므로 인스턴스가 필요하고, 그래서 생성 시점에 표를 검사할
-기회가 생깁니다.
+기능이 인스턴스를 갖지 않으므로 라우터는 `const` 목록 하나를 순회하는 함수이고,
+문서가 그리는 목록과 실제로 도는 목록이 어긋날 수가 없습니다.
+
+이 선택의 대가는 [4. 검사](4-verification.md)에 적혀 있습니다. 전이표가 주던
+`(상태 × 이벤트)` 전수 검사가 함께 사라집니다.
 
 ## `no_std` 경계
 
@@ -113,7 +102,7 @@ flowchart LR
 | `dispatch`, 가드 판정, `Memo`, 표 조회 | 없음 |
 | `verify` — 결함 목록을 만듦 | `Vec`, `String` |
 | `render` — 문서 문자열을 만듦 | `Vec`, `String` |
-| `Source::expand`, `AnyFeature::rows` 등 보고용 | `Vec`, `String` |
+| `AnyFeature::rows`, `handles`, `emits` 등 보고용 | `Vec`, `String` |
 
 즉 **컨트롤러를 실행하는 쪽은 힙을 쓰지 않고, 보고하는 쪽만 씁니다.**
 `extern crate alloc`이 무조건이므로 링크 시 전역 할당자는 필요합니다.
