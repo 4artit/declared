@@ -90,7 +90,8 @@ impl<M: MachineSpec> Machine<M> {
     /// # Panics
     ///
     /// Panics if `initial`, or any tag [`MachineSpec::all_tags`] lists, or any
-    /// edge target, is missing from [`MachineSpec::STATES`]. In debug builds,
+    /// edge target, is missing from [`MachineSpec::STATES`], or if a tag appears
+    /// there twice. In debug builds,
     /// also panics if [`crate::verify::coverage`] reports a defect (release builds
     /// skip that check; call [`crate::verify::coverage`] from a test to keep it
     /// enforced there).
@@ -103,6 +104,13 @@ impl<M: MachineSpec> Machine<M> {
             assert!(
                 M::STATES.iter().any(|s| s.tag == tag),
                 "tag {tag:?} is listed in MachineSpec::all_tags but not in the state table",
+            );
+        }
+        for (i, s) in M::STATES.iter().enumerate() {
+            assert!(
+                !M::STATES[..i].iter().any(|t| t.tag == s.tag),
+                "tag {:?} appears twice in the state table",
+                s.tag,
             );
         }
         for e in M::EDGES {

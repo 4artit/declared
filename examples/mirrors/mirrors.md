@@ -106,4 +106,4 @@ flowchart LR
 | Events nothing handles | [FoldPositionChanged, UserChanged] |
 | Guard names used by two node types | [] |
 | Rule ids used twice | [] |
-| Rules that emit nothing | [] |
+| Rules with no event or no action | [] |

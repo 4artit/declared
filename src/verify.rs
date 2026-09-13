@@ -231,10 +231,11 @@ pub fn duplicate_rule_ids<D: Domain>(features: &[&dyn AnyFeature<D>]) -> Vec<&'s
     out
 }
 
-/// Rules that emit no action, across a whole controller.
+/// Rules with no event or no action, across a whole controller.
 ///
-/// A rule's actions happen exactly when its events and guard hold. An empty rule
-/// only blocks the rules after it, so its condition belongs in their guards.
+/// A rule's actions happen exactly when its events and guard hold. A rule with
+/// no event never runs; a rule with no action only blocks the rules after it, so
+/// its condition belongs in their guards.
 ///
 /// - `features`: the controller's feature list.
 ///
@@ -243,7 +244,7 @@ pub fn empty_rules<D: Domain>(features: &[&dyn AnyFeature<D>]) -> Vec<&'static s
     features
         .iter()
         .flat_map(|f| f.rows())
-        .filter(|r| r.emit.is_empty())
+        .filter(|r| r.when.is_empty() || r.emit.is_empty())
         .map(|r| r.id)
         .collect()
 }

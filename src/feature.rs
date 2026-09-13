@@ -38,7 +38,8 @@ pub struct Rule<D: Domain, A: 'static> {
     /// [`AnyFeature::dispatch`] returns it with no feature name attached, so a
     /// repeat would be ambiguous. [`crate::verify::duplicate_rule_ids`] checks it.
     pub id: &'static str,
-    /// Event kinds this rule is considered for.
+    /// Event kinds this rule is considered for. Never empty:
+    /// [`crate::verify::empty_rules`] checks it.
     pub when: &'static [KindOf<D>],
     /// The condition, over the event and the world.
     pub check: &'static Expr<D>,

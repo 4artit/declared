@@ -700,6 +700,54 @@ fn an_edge_targeting_a_tag_outside_the_state_table_is_rejected() {
     let _ = Machine::<PartialCam>::new(Tag::Off);
 }
 
+/// A state table listing `Off` twice, so `Off` has two entry lists.
+struct DoubledCam;
+
+impl Domain for DoubledCam {
+    type Event = Event;
+    type EventKind = Kind;
+    type World = World;
+}
+
+impl MachineSpec for DoubledCam {
+    const NAME: &'static str = "DoubledCam";
+
+    type Domain = DoubledCam;
+    type Tag = Tag;
+    type Action = Action;
+    type StateAction = Action;
+
+    fn perform(_action: Action, _ev: &Event, _world: &mut World) {}
+    fn perform_state(_action: Action, _world: &mut World) {}
+
+    const STATES: &'static [State<DoubledCam>] = &[
+        State {
+            tag: Tag::Off,
+            entry: &[],
+            exit: &[],
+        },
+        State {
+            tag: Tag::Showing,
+            entry: &[],
+            exit: &[],
+        },
+        State {
+            tag: Tag::Off,
+            entry: &[Action::HideCamera],
+            exit: &[],
+        },
+    ];
+    const EDGES: &'static [Edge<DoubledCam>] = &[];
+    const IGNORES: &'static [Ignore<DoubledCam>] = &[];
+}
+
+/// A tag declared twice in the state table is rejected at construction.
+#[test]
+#[should_panic(expected = "tag Off appears twice in the state table")]
+fn a_tag_declared_twice_in_the_state_table_is_rejected() {
+    let _ = Machine::<DoubledCam>::new(Tag::Off);
+}
+
 /// Narrowing `all_tags` scopes the walk: only `Off` is checked, so `Showing`
 /// shows up as neither a hole nor unreachable.
 #[test]
@@ -1939,9 +1987,9 @@ fn duplicate_rule_ids_reports_a_repeat_across_features() {
     );
 }
 
-/// A rule with no action is reported by id, across features.
+/// A rule with no event or no action is reported by id, across features.
 #[test]
-fn empty_rules_reports_a_rule_that_emits_nothing() {
+fn empty_rules_reports_a_rule_with_no_event_or_no_action() {
     assert!(verify::empty_rules(CAMERA_FEATURES).is_empty());
 
     struct Swallow;
@@ -1959,6 +2007,13 @@ fn empty_rules_reports_a_rule_that_emits_nothing() {
             },
             Rule {
                 id: "SWALLOW_2",
+                when: &[],
+                check: crate::check!(),
+                unknown: OnUnknown::Deny,
+                emit: &[CamAction::HideCamera],
+            },
+            Rule {
+                id: "SWALLOW_3",
                 when: &[Kind::GearChanged],
                 check: crate::check!(),
                 unknown: OnUnknown::Deny,
@@ -1972,7 +2027,7 @@ fn empty_rules_reports_a_rule_that_emits_nothing() {
 
     assert_eq!(
         verify::empty_rules(&[&Camera, &Swallow]),
-        vec!["SWALLOW_1"]
+        vec!["SWALLOW_1", "SWALLOW_2"]
     );
 }
 

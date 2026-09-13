@@ -43,7 +43,7 @@ flowchart LR
 |---|---|
 | `duplicate_node_names(features, elsewhere)` | 도메인 안에서 한 가드 이름을 두 노드 타입이 씀 |
 | `duplicate_rule_ids(features)` | 컨트롤러 안에서 같은 규칙 `id`가 둘 |
-| `empty_rules(features)` | 액션을 하나도 내지 않는 규칙 |
+| `empty_rules(features)` | 이벤트나 액션이 하나도 없는 규칙 |
 | `unhandled_kinds(features, elsewhere)` | 아무 기능도 머신도 받지 않는 이벤트 종류 |
 | `unemitted_actions::<F>()` | 선언했으나 어떤 규칙도 내지 않는 죽은 액션 |
 
@@ -65,8 +65,9 @@ flowchart LR
 규칙 `id`도 같습니다. `dispatch`가 돌려주는 id에는 기능 이름이 붙어 있지
 않으므로, 컨트롤러 안에서 고유해야 하나의 규칙을 가리킬 수 있습니다.
 
-빈 규칙은 뒤 규칙을 막기만 합니다. 그 조건은 뒤 규칙의 가드에 적습니다. 그래야
-규칙 한 줄이 액션이 일어나는 이벤트와 조건을 모두 담습니다.
+이벤트가 없는 규칙은 실행되지 않고, 액션이 없는 규칙은 뒤 규칙을 막기만 합니다.
+막는 조건은 뒤 규칙의 가드에 적습니다. 그래야 규칙 한 줄이 액션이 일어나는
+이벤트와 조건을 모두 담습니다.
 
 ## 테스트에 넣는 모양
 

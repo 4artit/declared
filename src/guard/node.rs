@@ -17,8 +17,8 @@ use super::Cond;
 /// through [`Cx`].
 pub trait CondNode<D: Domain>: Sync + Any {
     /// The name shown in diagrams and logs, and the [`Memo`] cache key.
-    /// **Must be unique within a machine** — [`crate::verify::coverage`]
-    /// verifies this.
+    /// **Must be unique within a domain** —
+    /// [`crate::verify::duplicate_node_names`] verifies this.
     fn name(&self) -> &'static str;
 
     /// Evaluates the guard against `cx`. Must not modify the world.
@@ -126,8 +126,8 @@ impl<D: Domain> Expr<D> {
 
     /// Collects `(name, type id)` for every node this expression references.
     ///
-    /// - `out`: pairs are appended here, for [`crate::verify::coverage`]'s
-    ///   name-uniqueness check.
+    /// - `out`: pairs are appended here, for the name-uniqueness check in
+    ///   [`crate::verify::duplicate_node_names`] and [`crate::verify::coverage`].
     pub fn node_ids(&self, out: &mut Vec<(&'static str, core::any::TypeId)>) {
         match self {
             Self::Always => {}

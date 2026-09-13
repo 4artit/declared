@@ -135,9 +135,10 @@ fn document() -> String {
     let dup_ids = verify::duplicate_rule_ids(FEATURES);
     assert!(dup_ids.is_empty(), "rule ids used twice: {dup_ids:?}");
 
-    // A rule's condition is its events and guard alone, so every rule acts.
+    // A rule's condition is its events and guard alone, so every rule has both
+    // an event and an action.
     let empty = verify::empty_rules(FEATURES);
-    assert!(empty.is_empty(), "rules that emit nothing: {empty:?}");
+    assert!(empty.is_empty(), "rules with no event or no action: {empty:?}");
 
     // One feature at a time: with an action type per feature, a dead effect is a
     // question about the file that owns it.
@@ -186,7 +187,7 @@ each trigger reads in one place.
 | Events nothing handles | {unhandled:?} |
 | Guard names used by two node types | {dup:?} |
 | Rule ids used twice | {dup_ids:?} |
-| Rules that emit nothing | {empty:?} |
+| Rules with no event or no action | {empty:?} |
 ",
         table = render::io_table(FEATURES),
         rules = render::rule_table(FEATURES),
