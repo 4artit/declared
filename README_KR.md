@@ -118,7 +118,7 @@ fn main() {
 더 큰 예제입니다.
 
 - [`examples/door_lock`](examples/door_lock/main.rs) — 상태 4개, 조건 가드, 와일드카드 `Ignore`
-- [`examples/mirrors`](examples/mirrors/main.rs) — 두 층을 섞은 컨트롤러: 상태 없는 기능 둘과 상태 기계 하나
+- [`examples/mirrors`](examples/mirrors/main.rs) — 기능만으로 짠 컨트롤러: 열선, 감광, 접이
 
 ## 이점
 

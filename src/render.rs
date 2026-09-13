@@ -4,7 +4,7 @@
 //! [`crate::feature`] ones read a list of [`AnyFeature`].
 
 use alloc::format;
-use alloc::string::{String, ToString};
+use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt::Write as _;
 
@@ -15,7 +15,7 @@ use crate::{Domain, Enumerable, MachineSpec};
 
 /// Builds a mermaid `stateDiagram-v2` from a transition table.
 ///
-/// Named for what it draws, like [`io_flowchart`]: in this module a
+/// Named for what it draws, like [`when_flowchart`]: in this module a
 /// `*_diagram`/`*_flowchart` returns mermaid source and a `*_table` returns
 /// markdown.
 ///
@@ -24,7 +24,9 @@ use crate::{Domain, Enumerable, MachineSpec};
 ///   use [`internal_table`] for those.
 /// - `states`: entry/exit actions, drawn as state descriptions.
 ///
-/// Returns the diagram source. Converts to PlantUML almost line for line;
+/// Returns the diagram source. Each arrow is labelled with the edge id, then
+/// its event and guard, as the feature diagrams are. Converts to PlantUML almost
+/// line for line;
 /// see `scripts/mermaid_to_plantuml.sh`.
 pub fn state_diagram<M: MachineSpec>(
     initial: M::Tag,
@@ -68,9 +70,9 @@ pub fn state_diagram<M: MachineSpec>(
         };
         for from in e.from.expand() {
             let label = if guard.is_empty() {
-                format!("{:?}", e.when)
+                format!("{}<br/>{:?}", e.id, e.when)
             } else {
-                format!("{:?}<br/>[{guard}]", e.when)
+                format!("{}<br/>{:?}<br/>[{guard}]", e.id, e.when)
             };
             let _ = writeln!(s, "    {from:?} --> {next:?}: {label}{unknown}{emit}");
         }
@@ -176,7 +178,7 @@ pub fn rule_table<D: Domain>(features: &[&dyn AnyFeature<D>]) -> String {
                 f.name(),
                 r.id,
                 join_or_dash(r.when),
-                guard_cell(&rows, i),
+                guard_cell(&r.guard, is_fallback(&rows, i)),
                 join_names(&r.emit),
             );
         }
@@ -184,38 +186,118 @@ pub fn rule_table<D: Domain>(features: &[&dyn AnyFeature<D>]) -> String {
     s
 }
 
-/// Draws a mermaid flowchart of events → features → actions.
+// ─────────────────────────────────────────── one trigger set at a time
+
+/// The distinct `when` sets a feature's rules use, in the order they first
+/// appear. A set is compared regardless of order and returned in the event
+/// type's declaration order, so `[A, B]` and `[B, A]` are one group.
 ///
-/// - `features`: the feature list to render.
-///
-/// Returns the diagram source. The guard of the rule that produces an action
-/// labels the arrow to it, so the diagram says *why* an action is emitted and
-/// not only that it can be. Action node ids carry the feature name because an
-/// action belongs to one feature: two features that happen to name an effect
-/// alike are drawing two different effects.
-pub fn io_flowchart<D: Domain>(features: &[&dyn AnyFeature<D>]) -> String {
-    let mut s = String::from("flowchart LR\n");
-    for f in features {
-        let name = f.name();
-        for k in f.handles() {
-            let _ = writeln!(s, "    ev_{k:?}[\"{k:?}\"] --> ft_{name}[\"{name}\"]");
+/// - `feature`: the feature to scan.
+pub fn when_groups<D: Domain>(feature: &dyn AnyFeature<D>) -> Vec<Vec<D::EventKind>> {
+    let mut out: Vec<Vec<D::EventKind>> = Vec::new();
+    for r in feature.rows() {
+        let set = in_declaration_order::<D>(r.when);
+        if !out.contains(&set) {
+            out.push(set);
         }
-        let rows = f.rows();
-        for (i, r) in rows.iter().enumerate() {
-            let label = match (r.guard.is_empty(), is_fallback(&rows, i)) {
-                (false, _) => format!("|\"{}\"|", r.guard),
-                (true, true) => "|else|".to_string(),
-                (true, false) => String::new(),
-            };
-            for a in &r.emit {
-                let _ = writeln!(
-                    s,
-                    "    ft_{name}[\"{name}\"] -->{label} ac_{name}_{a}[\"{a}\"]"
-                );
-            }
+    }
+    out
+}
+
+/// Tabulates the rules of `feature` whose `when` set is exactly `when`.
+///
+/// - `feature`: the feature to render.
+/// - `when`: the trigger set, as returned by [`when_groups`].
+///
+/// Returns a markdown table in declaration order. `else` is judged against the
+/// whole feature, since priority reaches across groups that share an event.
+pub fn when_table<D: Domain>(feature: &dyn AnyFeature<D>, when: &[D::EventKind]) -> String {
+    let mut s = String::from("| rule | guard | emits |\n|---|---|---|\n");
+    let rows = feature.rows();
+    for (i, r) in rows.iter().enumerate() {
+        if !same_set::<D>(r.when, when) {
+            continue;
+        }
+        let unknown = if r.unknown == OnUnknown::Allow {
+            " (unknown=Allow)"
+        } else {
+            ""
+        };
+        let _ = writeln!(
+            s,
+            "| `{}` | {}{unknown} | {} |",
+            r.id,
+            guard_cell(&r.guard, is_fallback(&rows, i)),
+            join_names(&r.emit),
+        );
+    }
+    s
+}
+
+/// Draws one trigger set of `feature`: its events into the feature, and the
+/// actions the matching rules emit, each arrow labelled with the rule.
+///
+/// - `feature`: the feature to draw.
+/// - `when`: the trigger set, as returned by [`when_groups`].
+///
+/// Returns the diagram source. Priority is not drawn; [`when_table`] orders the
+/// rules.
+pub fn when_flowchart<D: Domain>(feature: &dyn AnyFeature<D>, when: &[D::EventKind]) -> String {
+    let mut s = String::from("flowchart LR\n");
+    let name = feature.name();
+    let ft = node_id(&format!("ft_{name}"));
+    for k in when {
+        let ev = node_id(&format!("ev_{k:?}"));
+        let _ = writeln!(s, "    {ev}[\"{k:?}\"] --> {ft}[\"{name}\"]");
+    }
+    let rows = feature.rows();
+    for (i, r) in rows.iter().enumerate() {
+        if !same_set::<D>(r.when, when) {
+            continue;
+        }
+        let label = edge_label(r.id, &r.guard, is_fallback(&rows, i));
+        for a in &r.emit {
+            let ac = node_id(&format!("ac_{name}_{a}"));
+            let _ = writeln!(s, "    {ft}[\"{name}\"] -->|\"{label}\"| {ac}[\"{a}\"]");
         }
     }
     s
+}
+
+/// `kinds` without repeats, in the event type's declaration order.
+fn in_declaration_order<D: Domain>(kinds: &[D::EventKind]) -> Vec<D::EventKind> {
+    <D::EventKind as Enumerable>::ALL
+        .iter()
+        .copied()
+        .filter(|k| kinds.contains(k))
+        .collect()
+}
+
+fn same_set<D: Domain>(a: &[D::EventKind], b: &[D::EventKind]) -> bool {
+    in_declaration_order::<D>(a) == in_declaration_order::<D>(b)
+}
+
+/// Folds a `Debug` rendering into a mermaid node identifier, replacing every
+/// character mermaid could read as syntax. Identifiers only — a label is
+/// quoted and keeps the original text.
+fn node_id(raw: &str) -> String {
+    raw.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect()
+}
+
+/// The label on a rule's arrow: its id, then the guard it decides by. An
+/// unconditional rule is its id alone.
+///
+/// - `id`: the rule's [`crate::feature::Rule::id`].
+/// - `guard`: its rendered guard, empty for an unguarded rule.
+/// - `fallback`: whether an earlier rule of the feature shadows this one.
+fn edge_label(id: &str, guard: &str, fallback: bool) -> String {
+    match (guard.is_empty(), fallback) {
+        (false, _) => format!("{id}<br/>{guard}"),
+        (true, true) => format!("{id}<br/>else"),
+        (true, false) => id.into(),
+    }
 }
 
 /// Whether an unguarded rule is a fallback rather than an unconditional one:
@@ -229,11 +311,11 @@ fn is_fallback<D: Domain>(rows: &[RuleRow<D>], i: usize) -> bool {
 
 /// The guard column of one rule: the expression, `else` for a fallback, or a
 /// dash for a rule that is genuinely unconditional.
-fn guard_cell<D: Domain>(rows: &[RuleRow<D>], i: usize) -> String {
-    match (rows[i].guard.is_empty(), is_fallback(rows, i)) {
-        (false, _) => format!("`{}`", rows[i].guard),
-        (true, true) => "else".to_string(),
-        (true, false) => "—".to_string(),
+fn guard_cell(guard: &str, fallback: bool) -> String {
+    match (guard.is_empty(), fallback) {
+        (false, _) => format!("`{guard}`"),
+        (true, true) => "else".into(),
+        (true, false) => "—".into(),
     }
 }
 

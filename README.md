@@ -121,7 +121,7 @@ fn main() {
 Bigger examples:
 
 - [`examples/door_lock`](examples/door_lock/main.rs) — four states, guard conditions, `Ignore` with wildcard sources
-- [`examples/mirrors`](examples/mirrors/main.rs) — a controller mixing both layers: two stateless features next to one state machine
+- [`examples/mirrors`](examples/mirrors/main.rs) — a controller built from features only: heating, dimming and folding
 
 ## What it buys you
 

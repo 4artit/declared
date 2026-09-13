@@ -287,8 +287,30 @@ fn main() {
         }
     }
 
-    let diagram = render::state_diagram::<Door>(INITIAL, EDGES, STATES);
-    let md = format!("# Door lock FSM\n\n```mermaid\n{diagram}```\n");
+    let md = format!(
+        "\
+# Door lock FSM
+
+## Transitions
+
+```mermaid
+{diagram}```
+
+## In-place transitions
+
+Edges that stay in their state. They run their actions but move nothing, so the
+diagram above does not draw them.
+
+{internal}
+## Deliberately unhandled
+
+Combinations no edge covers on purpose, each with its reason.
+
+{ignores}",
+        diagram = render::state_diagram::<Door>(INITIAL, EDGES, STATES),
+        internal = render::internal_table::<Door>(EDGES),
+        ignores = render::ignore_table::<Door>(IGNORES),
+    );
     golden(
         "examples/door_lock/door_lock.md",
         include_str!("door_lock.md"),

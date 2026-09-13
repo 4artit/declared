@@ -100,7 +100,9 @@ fn tables_are_clean() {
 | `render::ignore_table` | 일부러 처리하지 않는 조합과 그 이유 | 머신 |
 | `render::io_table` | 기능별 입력·출력 요약 | 기능 |
 | `render::rule_table` | 규칙 한 줄씩 | 기능 |
-| `render::io_flowchart` | mermaid 흐름도 — 이벤트 → 기능 → 액션 | 기능 |
+| `render::when_groups` | 한 기능의 규칙들이 쓰는 `when` 조합 목록 | 기능 |
+| `render::when_table` | 한 기능에서 `when` 조합이 같은 규칙들 | 기능 |
+| `render::when_flowchart` | mermaid 흐름도 — 그 조합의 이벤트들 → 기능 → 액션 | 기능 |
 
 이름 규칙은 내용 기준입니다. `*_diagram`과 `*_flowchart`는 mermaid 소스를,
 `*_table`은 마크다운 표를 돌려줍니다.

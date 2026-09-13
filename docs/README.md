@@ -48,5 +48,6 @@ flowchart LR
 - **`feature`** — 동작이 과거에 의존하지 않을 때. "지금 세상이 이러면 이걸 한다"
 - **`machine`** — 같은 이벤트가 상태에 따라 다른 뜻을 가질 때. "어디에 있었느냐가 답을 바꾼다"
 
-둘은 `Domain`을 공유하므로 한 컨트롤러 안에 섞어 쓸 수 있습니다.
-[`examples/mirrors`](../examples/mirrors/main.rs)가 그 예입니다.
+둘은 `Domain`을 공유하므로 한 컨트롤러 안에 섞어 쓸 수 있습니다. 예제는 각
+층을 따로 보여줍니다 — [`examples/door_lock`](../examples/door_lock/main.rs)은
+머신, [`examples/mirrors`](../examples/mirrors/main.rs)는 기능입니다.

@@ -424,9 +424,9 @@ fn mermaid_matches_golden() {
 stateDiagram-v2
     [*] --> Off
     Showing : Showing<br/>entry / ShowCamera<br/>exit / HideCamera
-    Off --> Showing: GearChanged<br/>[GearIsReverse && SpeedBelowLimit]
-    Showing --> Off: GearChanged<br/>[!GearIsReverse]
-    Showing --> Off: SpeedChanged<br/>[!SpeedBelowLimit]<br/>unknown=Allow
+    Off --> Showing: CAM_ON<br/>GearChanged<br/>[GearIsReverse && SpeedBelowLimit]
+    Showing --> Off: CAM_OFF_GEAR<br/>GearChanged<br/>[!GearIsReverse]
+    Showing --> Off: CAM_OFF_SPEED<br/>SpeedChanged<br/>[!SpeedBelowLimit]<br/>unknown=Allow
 ";
 
     // No machine needed: the diagram comes from the static tables alone.
@@ -1092,7 +1092,7 @@ fn mermaid_labels_a_guardless_edge_and_its_run_actions() {
     let diagram = render::state_diagram::<Broken>(Tag::Off, BROKEN_EDGES, BROKEN_STATES);
 
     assert!(
-        diagram.contains("Off --> Off: GearChanged<br/>/ UpdateOverlay"),
+        diagram.contains("Off --> Off: NO_GUARD<br/>GearChanged<br/>/ UpdateOverlay"),
         "{diagram}"
     );
     // Showing has no state table entry, so it gets no description line.
@@ -1336,6 +1336,36 @@ fn dispatch_evaluates_a_shared_node_once() {
     assert_eq!(w.speed_lookups.get(), 1);
 }
 
+/// An action carrying a value, whose `{:?}` puts punctuation in the middle of
+/// what becomes a node id.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+enum PayloadAction {
+    Show(u8),
+}
+
+struct Payload;
+
+impl Feature for Payload {
+    type Domain = RearCam;
+    type Action = PayloadAction;
+
+    const NAME: &'static str = "Payload";
+
+    const RULES: &'static [Rule<RearCam, PayloadAction>] = &[Rule {
+        id: "PAYLOAD_1",
+        when: &[Kind::GearChanged],
+        check: crate::check!(GearIsReverse),
+        unknown: OnUnknown::Deny,
+        emit: &[PayloadAction::Show(7)],
+    }];
+
+    fn perform(action: PayloadAction, ev: &Event, world: &mut World) {
+        match action {
+            PayloadAction::Show(_) => perform_for_event(Action::ShowCamera, ev, world),
+        }
+    }
+}
+
 /// Rules that overlap in both columns. `handles` and `emits` are the union, so
 /// the summary table does not repeat itself.
 struct Noisy;
@@ -1491,50 +1521,145 @@ fn rule_table_marks_an_allowing_rule() {
     );
 }
 
-#[test]
-fn io_flowchart_keeps_features_and_actions_apart() {
-    let declared = render::io_flowchart(CAMERA_FEATURES);
+// ─────────────────────────────────────────── one trigger set at a time
 
-    assert!(declared.contains(r#"ev_GearChanged["GearChanged"] --> ft_Camera["Camera"]"#));
+/// The same set written in two orders, so grouping has to ignore order.
+struct Reordered;
+
+impl Feature for Reordered {
+    type Domain = RearCam;
+    type Action = CamAction;
+
+    const NAME: &'static str = "Reordered";
+
+    const RULES: &'static [Rule<RearCam, CamAction>] = &[
+        Rule {
+            id: "REORDERED_1",
+            when: &[Kind::SpeedChanged, Kind::GearChanged],
+            check: crate::check!(GearIsReverse),
+            unknown: OnUnknown::Deny,
+            emit: &[CamAction::ShowCamera],
+        },
+        Rule {
+            id: "REORDERED_2",
+            when: &[Kind::GearChanged, Kind::SpeedChanged],
+            check: crate::check!(),
+            unknown: OnUnknown::Deny,
+            emit: &[CamAction::HideCamera],
+        },
+    ];
+
+    fn perform(action: CamAction, ev: &Event, world: &mut World) {
+        Camera::perform(action, ev, world);
+    }
+}
+
+/// Distinct sets in first-appearance order, each in declaration order.
+#[test]
+fn when_groups_lists_each_distinct_set_once() {
+    assert_eq!(render::when_groups(&Camera), vec![vec![Kind::GearChanged]]);
+    assert_eq!(
+        render::when_groups(&Noisy),
+        vec![
+            vec![Kind::GearChanged, Kind::SpeedChanged],
+            vec![Kind::GearChanged, Kind::PowerChanged],
+        ]
+    );
+}
+
+#[test]
+fn when_groups_ignores_the_order_a_set_is_written_in() {
+    assert_eq!(
+        render::when_groups(&Reordered),
+        vec![vec![Kind::GearChanged, Kind::SpeedChanged]]
+    );
+}
+
+/// Only rules with exactly this set, not rules that merely share an event.
+#[test]
+fn when_table_selects_the_exact_set() {
+    let table = render::when_table(&Noisy, &[Kind::GearChanged, Kind::SpeedChanged]);
+
+    assert!(table.contains("`NOISY_1`"), "{table}");
+    assert!(!table.contains("`NOISY_2`"), "{table}");
+}
+
+#[test]
+fn when_table_gathers_a_set_written_in_either_order() {
+    let table = render::when_table(&Reordered, &[Kind::GearChanged, Kind::SpeedChanged]);
+
+    assert!(table.contains("| `REORDERED_1` | `GearIsReverse` | `ShowCamera` |"), "{table}");
+    assert!(table.contains("| `REORDERED_2` | else | `HideCamera` |"), "{table}");
+}
+
+/// `NOISY_2` sits alone in its group, but `NOISY_1` shares `GearChanged` and
+/// is tried first, so it is still a fallback.
+#[test]
+fn when_table_judges_else_against_the_whole_feature() {
+    let table = render::when_table(&Noisy, &[Kind::GearChanged, Kind::PowerChanged]);
+
+    assert!(table.contains("| `NOISY_2` | else | `ShowCamera` |"), "{table}");
+}
+
+#[test]
+fn when_table_marks_an_allowing_rule() {
+    let table = render::when_table(&Optimist, &[Kind::SpeedChanged]);
+
+    assert!(table.contains("(unknown=Allow)"), "{table}");
+}
+
+/// Every event of the set enters the feature once.
+#[test]
+fn when_flowchart_draws_every_event_of_the_set() {
+    let declared = render::when_flowchart(&Noisy, &[Kind::GearChanged, Kind::SpeedChanged]);
+
+    assert!(declared.contains(r#"ev_GearChanged["GearChanged"] --> ft_Noisy["Noisy"]"#));
+    assert!(declared.contains(r#"ev_SpeedChanged["SpeedChanged"] --> ft_Noisy["Noisy"]"#));
+    assert!(!declared.contains("ev_PowerChanged"), "{declared}");
+    assert!(declared.contains(r#""NOISY_1<br/>GearIsReverse""#), "{declared}");
+    assert!(!declared.contains("NOISY_2"), "{declared}");
+}
+
+/// An arrow names the rule that produced the action, then its guard.
+#[test]
+fn when_flowchart_labels_arrows_with_their_rule_and_guard() {
+    let declared = render::when_flowchart(&Camera, &[Kind::GearChanged]);
+
     assert!(
         declared.contains(
-            r#"ft_Camera["Camera"] -->|"GearIsReverse"| ac_Camera_ShowCamera["ShowCamera"]"#
+            r#"ft_Camera["Camera"] -->|"CAMERA_1<br/>GearIsReverse"| ac_Camera_ShowCamera["ShowCamera"]"#
+        ),
+        "{declared}"
+    );
+    assert!(
+        declared.contains(
+            r#"ft_Camera["Camera"] -->|"CAMERA_2<br/>else"| ac_Camera_HideCamera["HideCamera"]"#
         ),
         "{declared}"
     );
 }
 
-/// An action node id carries its feature: two features that name an effect
-/// alike are drawing two different effects, so the nodes must not merge.
+/// An unconditional rule's arrow carries its id and nothing else.
 #[test]
-fn io_flowchart_scopes_action_nodes_to_their_feature() {
-    let declared = render::io_flowchart(&[&Camera, &Noisy]);
-
-    assert!(declared.contains("ac_Camera_ShowCamera"), "{declared}");
-    assert!(declared.contains("ac_Noisy_ShowCamera"), "{declared}");
-}
-
-/// The arrow an action arrives by carries the condition that produced it, so
-/// the diagram says why and not only whether.
-#[test]
-fn io_flowchart_labels_arrows_with_their_guard() {
-    let declared = render::io_flowchart(&[&Camera]);
+fn when_flowchart_labels_an_unconditional_arrow_with_the_id_alone() {
+    let declared = render::when_flowchart(&Always, &[Kind::PowerChanged]);
 
     assert!(
-        declared.contains(r#"ft_Camera["Camera"] -->|else| ac_Camera_HideCamera["HideCamera"]"#),
+        declared.contains(
+            r#"ft_Always["Always"] -->|"ALWAYS_1"| ac_Always_UpdateOverlay["UpdateOverlay"]"#
+        ),
         "{declared}"
     );
 }
 
-/// An unconditional rule's arrow carries no label at all.
+/// A node id may not carry punctuation — mermaid ends the identifier at `(`
+/// and fails to parse the line. The quoted label keeps it.
 #[test]
-fn io_flowchart_leaves_an_unconditional_arrow_bare() {
-    let declared = render::io_flowchart(&[&Always]);
+fn when_flowchart_folds_punctuation_out_of_node_ids() {
+    let declared = render::when_flowchart(&Payload, &[Kind::GearChanged]);
 
-    assert!(
-        declared.contains(r#"ft_Always["Always"] --> ac_Always_UpdateOverlay["UpdateOverlay"]"#),
-        "{declared}"
-    );
+    assert!(declared.contains(r#"ac_Payload_Show_7_["Show(7)"]"#), "{declared}");
+    assert!(!declared.contains("ac_Payload_Show(7)"), "{declared}");
 }
 
 #[test]
