@@ -234,8 +234,9 @@ pub fn when_table<D: Domain>(feature: &dyn AnyFeature<D>, when: &[D::EventKind])
     s
 }
 
-/// Draws one trigger set of `feature`: its events into the feature, and the
-/// actions the matching rules emit, each arrow labelled with the rule.
+/// Draws one trigger set of `feature`: its events into the feature, and one
+/// arrow per matching rule, labelled with the rule and ending in a box of its
+/// actions in emit order.
 ///
 /// - `feature`: the feature to draw.
 /// - `when`: the trigger set, as returned by [`when_groups`].
@@ -256,10 +257,9 @@ pub fn when_flowchart<D: Domain>(feature: &dyn AnyFeature<D>, when: &[D::EventKi
             continue;
         }
         let label = edge_label(r.id, &r.guard, is_fallback(&rows, i));
-        for a in &r.emit {
-            let ac = node_id(&format!("ac_{name}_{a}"));
-            let _ = writeln!(s, "    {ft}[\"{name}\"] -->|\"{label}\"| {ac}[\"{a}\"]");
-        }
+        let ac = node_id(&format!("ac_{name}_{}", r.id));
+        let actions = r.emit.join(", ");
+        let _ = writeln!(s, "    {ft}[\"{name}\"] -->|\"{label}\"| {ac}[\"{actions}\"]");
     }
     s
 }

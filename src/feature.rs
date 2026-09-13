@@ -44,7 +44,8 @@ pub struct Rule<D: Domain, A: 'static> {
     pub check: &'static Expr<D>,
     /// What to do when `check` is undecidable.
     pub unknown: OnUnknown,
-    /// Actions to run, in order, when this rule is taken.
+    /// Actions to run, in order, when this rule is taken. Never empty:
+    /// [`crate::verify::empty_rules`] checks it.
     pub emit: &'static [A],
 }
 

@@ -1336,8 +1336,8 @@ fn dispatch_evaluates_a_shared_node_once() {
     assert_eq!(w.speed_lookups.get(), 1);
 }
 
-/// An action carrying a value, whose `{:?}` puts punctuation in the middle of
-/// what becomes a node id.
+/// An action carrying a value, whose `{:?}` has punctuation mermaid would parse
+/// as syntax outside a quoted label.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 enum PayloadAction {
     Show(u8),
@@ -1627,16 +1627,47 @@ fn when_flowchart_labels_arrows_with_their_rule_and_guard() {
 
     assert!(
         declared.contains(
-            r#"ft_Camera["Camera"] -->|"CAMERA_1<br/>GearIsReverse"| ac_Camera_ShowCamera["ShowCamera"]"#
+            r#"ft_Camera["Camera"] -->|"CAMERA_1<br/>GearIsReverse"| ac_Camera_CAMERA_1["ShowCamera"]"#
         ),
         "{declared}"
     );
     assert!(
         declared.contains(
-            r#"ft_Camera["Camera"] -->|"CAMERA_2<br/>else"| ac_Camera_HideCamera["HideCamera"]"#
+            r#"ft_Camera["Camera"] -->|"CAMERA_2<br/>else"| ac_Camera_CAMERA_2["HideCamera"]"#
         ),
         "{declared}"
     );
+}
+
+/// A rule is one arrow into one box holding all its actions, in emit order.
+#[test]
+fn when_flowchart_draws_a_rule_as_one_arrow_to_its_actions() {
+    struct Pair;
+    impl Feature for Pair {
+        type Domain = RearCam;
+        type Action = CamAction;
+        const NAME: &'static str = "Pair";
+        const RULES: &'static [Rule<RearCam, CamAction>] = &[Rule {
+            id: "PAIR_1",
+            when: &[Kind::GearChanged],
+            check: crate::check!(GearIsReverse),
+            unknown: OnUnknown::Deny,
+            emit: &[CamAction::HideCamera, CamAction::ShowCamera],
+        }];
+        fn perform(action: CamAction, ev: &Event, world: &mut World) {
+            Camera::perform(action, ev, world);
+        }
+    }
+
+    let declared = render::when_flowchart(&Pair, &[Kind::GearChanged]);
+
+    assert!(
+        declared.contains(
+            r#"ft_Pair["Pair"] -->|"PAIR_1<br/>GearIsReverse"| ac_Pair_PAIR_1["HideCamera, ShowCamera"]"#
+        ),
+        "{declared}"
+    );
+    assert_eq!(declared.matches("PAIR_1<br/>").count(), 1, "{declared}");
 }
 
 /// An unconditional rule's arrow carries its id and nothing else.
@@ -1646,20 +1677,19 @@ fn when_flowchart_labels_an_unconditional_arrow_with_the_id_alone() {
 
     assert!(
         declared.contains(
-            r#"ft_Always["Always"] -->|"ALWAYS_1"| ac_Always_UpdateOverlay["UpdateOverlay"]"#
+            r#"ft_Always["Always"] -->|"ALWAYS_1"| ac_Always_ALWAYS_1["UpdateOverlay"]"#
         ),
         "{declared}"
     );
 }
 
-/// A node id may not carry punctuation — mermaid ends the identifier at `(`
-/// and fails to parse the line. The quoted label keeps it.
+/// A payload action's punctuation stays in the quoted label, out of the node id.
 #[test]
-fn when_flowchart_folds_punctuation_out_of_node_ids() {
+fn when_flowchart_keeps_punctuation_out_of_node_ids() {
     let declared = render::when_flowchart(&Payload, &[Kind::GearChanged]);
 
-    assert!(declared.contains(r#"ac_Payload_Show_7_["Show(7)"]"#), "{declared}");
-    assert!(!declared.contains("ac_Payload_Show(7)"), "{declared}");
+    assert!(declared.contains(r#"ac_Payload_PAYLOAD_1["Show(7)"]"#), "{declared}");
+    assert!(!declared.contains("_Show("), "{declared}");
 }
 
 #[test]
@@ -1906,6 +1936,43 @@ fn duplicate_rule_ids_reports_a_repeat_across_features() {
     assert_eq!(
         verify::duplicate_rule_ids(&[&Camera, &Twin]),
         vec!["CAMERA_1"]
+    );
+}
+
+/// A rule with no action is reported by id, across features.
+#[test]
+fn empty_rules_reports_a_rule_that_emits_nothing() {
+    assert!(verify::empty_rules(CAMERA_FEATURES).is_empty());
+
+    struct Swallow;
+    impl Feature for Swallow {
+        type Domain = RearCam;
+        type Action = CamAction;
+        const NAME: &'static str = "Swallow";
+        const RULES: &'static [Rule<RearCam, CamAction>] = &[
+            Rule {
+                id: "SWALLOW_1",
+                when: &[Kind::GearChanged],
+                check: crate::check!(GearIsReverse),
+                unknown: OnUnknown::Deny,
+                emit: &[],
+            },
+            Rule {
+                id: "SWALLOW_2",
+                when: &[Kind::GearChanged],
+                check: crate::check!(),
+                unknown: OnUnknown::Deny,
+                emit: &[CamAction::ShowCamera],
+            },
+        ];
+        fn perform(action: CamAction, ev: &Event, world: &mut World) {
+            Camera::perform(action, ev, world);
+        }
+    }
+
+    assert_eq!(
+        verify::empty_rules(&[&Camera, &Swallow]),
+        vec!["SWALLOW_1"]
     );
 }
 

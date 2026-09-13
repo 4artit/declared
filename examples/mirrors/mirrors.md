@@ -49,8 +49,8 @@ each trigger reads in one place.
 ```mermaid
 flowchart LR
     ev_DefogChanged["DefogChanged"] --> ft_Heating["Heating"]
-    ft_Heating["Heating"] -->|"HEAT_ON<br/>DefogOn"| ac_Heating_On["On"]
-    ft_Heating["Heating"] -->|"HEAT_OFF<br/>else"| ac_Heating_Off["Off"]
+    ft_Heating["Heating"] -->|"HEAT_ON<br/>DefogOn"| ac_Heating_HEAT_ON["On"]
+    ft_Heating["Heating"] -->|"HEAT_OFF<br/>else"| ac_Heating_HEAT_OFF["Off"]
 ```
 
 ### Dimming
@@ -66,8 +66,8 @@ flowchart LR
 flowchart LR
     ev_PowerChanged["PowerChanged"] --> ft_Dimming["Dimming"]
     ev_GearChanged["GearChanged"] --> ft_Dimming["Dimming"]
-    ft_Dimming["Dimming"] -->|"DIM_ON<br/>PowerOn && !GearReverse"| ac_Dimming_On["On"]
-    ft_Dimming["Dimming"] -->|"DIM_OFF<br/>else"| ac_Dimming_Off["Off"]
+    ft_Dimming["Dimming"] -->|"DIM_ON<br/>PowerOn && !GearReverse"| ac_Dimming_DIM_ON["On"]
+    ft_Dimming["Dimming"] -->|"DIM_OFF<br/>else"| ac_Dimming_DIM_OFF["Off"]
 ```
 
 ### Fold
@@ -82,8 +82,8 @@ flowchart LR
 ```mermaid
 flowchart LR
     ev_PowerChanged["PowerChanged"] --> ft_Fold["Fold"]
-    ft_Fold["Fold"] -->|"FOLD_ON_POWER_OFF<br/>PowerOff && SpeedAllowsFold && AtUnfolded"| ac_Fold_Fold["Fold"]
-    ft_Fold["Fold"] -->|"UNFOLD_ON_POWER_ON<br/>PowerOn && AtFolded"| ac_Fold_Unfold["Unfold"]
+    ft_Fold["Fold"] -->|"FOLD_ON_POWER_OFF<br/>PowerOff && SpeedAllowsFold && AtUnfolded"| ac_Fold_FOLD_ON_POWER_OFF["Fold"]
+    ft_Fold["Fold"] -->|"UNFOLD_ON_POWER_ON<br/>PowerOn && AtFolded"| ac_Fold_UNFOLD_ON_POWER_ON["Unfold"]
 ```
 
 #### When `SpeedChanged`
@@ -95,7 +95,7 @@ flowchart LR
 ```mermaid
 flowchart LR
     ev_SpeedChanged["SpeedChanged"] --> ft_Fold["Fold"]
-    ft_Fold["Fold"] -->|"UNFOLD_ON_SPEED<br/>SpeedForcesUnfold && AtFolded"| ac_Fold_Unfold["Unfold"]
+    ft_Fold["Fold"] -->|"UNFOLD_ON_SPEED<br/>SpeedForcesUnfold && AtFolded"| ac_Fold_UNFOLD_ON_SPEED["Unfold"]
 ```
 
 
@@ -106,3 +106,4 @@ flowchart LR
 | Events nothing handles | [FoldPositionChanged, UserChanged] |
 | Guard names used by two node types | [] |
 | Rule ids used twice | [] |
+| Rules that emit nothing | [] |

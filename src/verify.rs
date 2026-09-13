@@ -231,6 +231,23 @@ pub fn duplicate_rule_ids<D: Domain>(features: &[&dyn AnyFeature<D>]) -> Vec<&'s
     out
 }
 
+/// Rules that emit no action, across a whole controller.
+///
+/// A rule's actions happen exactly when its events and guard hold. An empty rule
+/// only blocks the rules after it, so its condition belongs in their guards.
+///
+/// - `features`: the controller's feature list.
+///
+/// Returns the offending ids in declaration order. **Must be empty in CI.**
+pub fn empty_rules<D: Domain>(features: &[&dyn AnyFeature<D>]) -> Vec<&'static str> {
+    features
+        .iter()
+        .flat_map(|f| f.rows())
+        .filter(|r| r.emit.is_empty())
+        .map(|r| r.id)
+        .collect()
+}
+
 /// The event kinds a transition table acts on. `Ignore`d kinds do not count —
 /// pass this to [`unhandled_kinds`] alongside a feature list so
 /// a controller mixing both layers is checked as one unit.
