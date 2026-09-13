@@ -122,12 +122,12 @@ fn main() {
 fn document() -> String {
     // Expected to list `FoldPositionChanged` and `UserChanged`: the first is a
     // signal the controller keeps rather than decides on, the second is reacted
-    // to by nobody. Both are visible in the `By event` sections below.
-    let unhandled = verify::unhandled_kinds(FEATURES);
+    // to by nobody.
+    let unhandled = verify::unhandled_kinds(FEATURES, &[]);
 
     // Node names are unique per domain: `Memo` keys on the name, so two node
     // types answering to one would make the second inherit the first's answer.
-    let dup = verify::duplicate_node_names(FEATURES);
+    let dup = verify::duplicate_node_names(FEATURES, &[]);
     assert!(dup.is_empty(), "guard names used by two node types: {dup:?}");
 
     // The id `dispatch` hands back carries no feature name, so it has to name
@@ -168,13 +168,13 @@ first rule whose guard holds is the one that runs, so a rule with no guard is a
 fallback.
 
 {rules}
-## By event
+## By feature
 
-One signal at a time, which is the shape a requirement is written in. A rule
-covering several kinds appears under each of them; the `when` column is what
-says so.
+Each feature, split by the set of events its rules react to. Rules triggered by
+the same combination share a table and a diagram, so what a feature does on
+each trigger reads in one place.
 
-{by_event}
+{by_feature}
 ## Checks
 
 | Check | Result |
@@ -185,32 +185,27 @@ says so.
 ",
         table = render::io_table(FEATURES),
         rules = render::rule_table(FEATURES),
-        by_event = by_event(),
+        by_feature = by_feature(),
         unhandled = unhandled,
         dup = dup,
         dup_ids = dup_ids,
     )
 }
 
-/// One section per event kind, in `events!` declaration order. A kind nothing
-/// reacts to still gets a section: `FoldPositionChanged` is a signal the
-/// controller keeps rather than decides on, and saying so where a reader looks
-/// it up is worth more than leaving the section out.
-fn by_event() -> String {
+/// One section per feature, and under it one table and diagram per `when` set.
+fn by_feature() -> String {
     let mut s = String::new();
-    for &kind in Mirrors::all_kinds() {
-        s.push_str(&format!("### {kind:?}\n\n"));
-
-        if !FEATURES.iter().any(|f| f.handles().contains(&kind)) {
-            s.push_str("Nothing reacts to this event.\n\n");
-            continue;
+    for f in FEATURES {
+        s.push_str(&format!("### {}\n\n", f.name()));
+        for when in render::when_groups(*f) {
+            let names: Vec<String> = when.iter().map(|k| format!("`{k:?}`")).collect();
+            s.push_str(&format!("#### When {}\n\n", names.join(", ")));
+            s.push_str(&render::when_table(*f, &when));
+            s.push_str(&format!(
+                "\n```mermaid\n{}```\n\n",
+                render::when_flowchart(*f, &when)
+            ));
         }
-
-        s.push_str(&render::event_table(FEATURES, kind));
-        s.push_str(&format!(
-            "\n```mermaid\n{}```\n\n",
-            render::event_flowchart(FEATURES, kind)
-        ));
     }
     s
 }

@@ -11,9 +11,17 @@ use std::cell::Cell;
 
 use super::feature::{AnyFeature, Feature, Rule};
 use super::guard::{Cond, Cx, Expr, Memo, OnUnknown};
-use super::{Domain, Enumerable, HasKind, render, verify};
+use super::machine::{self, Edge, Goto, Ignore, Machine, Source, State, Taken};
+use super::{Domain, Enumerable, HasKind, MachineSpec, render, verify};
 
 // ─────────────────────────────────────────── domain
+
+crate::tags! {
+    enum Tag {
+        Off,
+        Showing,
+    }
+}
 
 crate::events! {
     #[derive(Clone, Debug)]
@@ -37,7 +45,7 @@ enum Action {
     UpdateOverlay,
 }
 
-// Only needed by `verify::unemitted_actions`; `Domain` does not require it.
+// Only needed by `feature::unemitted_actions`; `Domain` does not require it.
 impl Enumerable for Action {
     const ALL: &'static [Self] = &[Self::ShowCamera, Self::HideCamera, Self::UpdateOverlay];
 }
@@ -49,7 +57,7 @@ struct World {
     camera_visible: bool,
     performed: Vec<Action>,
     /// The event kind each action was performed for, recorded from `perform`'s
-    /// `ev` argument.
+    /// `ev` argument. Entry and exit add nothing: `perform_state` has no event.
     performed_for: Vec<Kind>,
     /// How many times `SpeedBelowLimit` looked the speed up. Guards receive
     /// `&World`, so this needs interior mutability.
@@ -64,9 +72,9 @@ impl Domain for RearCam {
     type World = World;
 }
 
-/// Every feature in this fixture runs its effects the same way, so they all
-/// point here. Splitting effects per feature is what the example does; the
-/// tests are about dispatch, not about who owns what.
+/// Every owner in this fixture runs its effects the same way, so they all point
+/// here. Splitting effects per owner is what the example does; the tests are
+/// about dispatch, not about who owns what.
 fn perform_action(action: Action, world: &mut World) {
     world.performed.push(action);
     match action {
@@ -76,10 +84,35 @@ fn perform_action(action: Action, world: &mut World) {
     }
 }
 
-/// Records the kind the action was performed for.
+/// Records the kind the action was performed for, which only an event-carrying
+/// action can do.
 fn perform_for_event(action: Action, ev: &Event, world: &mut World) {
     world.performed_for.push(ev.kind());
     perform_action(action, world);
+}
+
+impl MachineSpec for RearCam {
+    const NAME: &'static str = "RearCam";
+
+    type Domain = RearCam;
+    type Tag = Tag;
+    // This machine's edges and its states drive the same effects, so both of
+    // its vocabularies are the one `Action` enum. The features below declare
+    // their own; `World` is what they all end up speaking to.
+    type Action = Action;
+    type StateAction = Action;
+
+    const STATES: &'static [State<RearCam>] = STATES;
+    const EDGES: &'static [Edge<RearCam>] = EDGES;
+    const IGNORES: &'static [Ignore<RearCam>] = IGNORES;
+
+    fn perform(action: Action, ev: &Event, world: &mut World) {
+        perform_for_event(action, ev, world);
+    }
+
+    fn perform_state(action: Action, world: &mut World) {
+        perform_action(action, world);
+    }
 }
 
 // ─────────────────────────────────────────── guards
@@ -99,6 +132,980 @@ crate::cond_node!(RearCam, SpeedBelowLimit, |cx| {
         None => Cond::Unknown,
     }
 });
+
+// ─────────────────────────────────────────── states
+
+static STATES: &[State<RearCam>] = &[
+    State {
+        tag: Tag::Off,
+        entry: &[],
+        exit: &[],
+    },
+    State {
+        tag: Tag::Showing,
+        entry: &[Action::ShowCamera],
+        exit: &[Action::HideCamera],
+    },
+];
+
+// ─────────────────────────────────────────── table
+
+static EDGES: &[Edge<RearCam>] = &[
+    Edge {
+        id: "CAM_ON",
+        from: Source::These(&[Tag::Off]),
+        when: Kind::GearChanged,
+        check: crate::check!(GearIsReverse && SpeedBelowLimit),
+        unknown: OnUnknown::Deny, // unknown speed: do not turn it on
+        emit: &[],
+        goto: Goto::To(Tag::Showing),
+    },
+    Edge {
+        id: "CAM_OFF_GEAR",
+        from: Source::These(&[Tag::Showing]),
+        when: Kind::GearChanged,
+        check: crate::check!(!GearIsReverse),
+        unknown: OnUnknown::Deny,
+        emit: &[],
+        goto: Goto::To(Tag::Off),
+    },
+    Edge {
+        id: "CAM_OFF_SPEED",
+        from: Source::These(&[Tag::Showing]),
+        when: Kind::SpeedChanged,
+        check: crate::check!(!SpeedBelowLimit),
+        unknown: OnUnknown::Allow, // unknown speed: turn it off
+        emit: &[],
+        goto: Goto::To(Tag::Off),
+    },
+    Edge {
+        id: "CAM_OVERLAY",
+        from: Source::These(&[Tag::Showing]),
+        when: Kind::SpeedChanged,
+        check: crate::check!(SpeedBelowLimit),
+        unknown: OnUnknown::Deny,
+        emit: &[Action::UpdateOverlay],
+        goto: Goto::Internal, // stays in state, so exit/enter do not run
+    },
+];
+
+static IGNORES: &[Ignore<RearCam>] = &[
+    Ignore {
+        from: Source::These(&[Tag::Off]),
+        when: &[Kind::SpeedChanged],
+        why: "speed is irrelevant while the camera is not shown",
+    },
+    Ignore {
+        from: Source::Any,
+        when: &[Kind::PowerChanged],
+        why: "power is handled by the parent controller",
+    },
+];
+
+fn off() -> Machine<RearCam> {
+    Machine::new(Tag::Off)
+}
+
+fn showing() -> (Machine<RearCam>, World) {
+    let mut m = off();
+    let mut w = World {
+        speed: Some(10.0),
+        ..Default::default()
+    };
+    machine::dispatch(&mut m, &Event::GearChanged(Gear::Reverse), &mut w);
+    assert_eq!(m.tag(), Tag::Showing);
+    w.performed.clear();
+    w.performed_for.clear();
+    (m, w)
+}
+
+// ─────────────────────────────────────────── tests
+
+#[test]
+fn enters_showing_and_runs_entry_action() {
+    let mut m = off();
+    let mut w = World {
+        speed: Some(10.0),
+        ..Default::default()
+    };
+
+    let taken = machine::dispatch(&mut m, &Event::GearChanged(Gear::Reverse), &mut w).unwrap();
+
+    assert_eq!(taken.edge, "CAM_ON");
+    assert_eq!(taken.entry, [Action::ShowCamera]);
+    assert!(taken.exit.is_empty());
+    assert!(taken.emit.is_empty());
+    assert_eq!(m.tag(), Tag::Showing);
+    assert_eq!(w.performed, vec![Action::ShowCamera]);
+    assert!(w.camera_visible);
+}
+
+/// `initial` names the state the world is already in, so its entry belongs to a
+/// past run and is not replayed. Its exit still runs on the way out.
+#[test]
+fn the_initial_state_is_resumed_not_entered() {
+    // The world arrives with the camera already on.
+    let mut w = World {
+        speed: Some(10.0),
+        camera_visible: true,
+        ..Default::default()
+    };
+
+    let mut m = Machine::<RearCam>::new(Tag::Showing);
+    assert!(w.performed.is_empty(), "ShowCamera must not be replayed");
+
+    machine::dispatch(&mut m, &Event::GearChanged(Gear::Drive), &mut w).unwrap();
+
+    assert_eq!(w.performed, vec![Action::HideCamera]);
+    assert!(!w.camera_visible);
+}
+
+/// `Taken`'s impls are hand-written so that they bound the action types rather
+/// than `D`, which a derive would have required.
+#[test]
+fn taken_is_debug_clone_and_eq() {
+    let mut m = off();
+    let mut w = World {
+        speed: Some(10.0),
+        ..Default::default()
+    };
+
+    let on = machine::dispatch(&mut m, &Event::GearChanged(Gear::Reverse), &mut w).unwrap();
+
+    assert_eq!(
+        format!("{on:?}"),
+        r#"Taken { edge: "CAM_ON", exit: [], emit: [], entry: [ShowCamera] }"#
+    );
+    assert_eq!(on.clone(), on);
+
+    let off = machine::dispatch(&mut m, &Event::GearChanged(Gear::Drive), &mut w).unwrap();
+    assert_ne!(off, on);
+}
+
+/// Two transitions can share an edge id only by mistake, so `eq` compares the
+/// action lists as well. Values differing only after `edge` prove it reads them.
+#[test]
+fn taken_eq_compares_every_field() {
+    let base: Taken<RearCam> = Taken {
+        edge: "CAM_ON",
+        exit: &[],
+        emit: &[],
+        entry: &[],
+    };
+
+    assert_eq!(base, base);
+    assert_ne!(
+        base,
+        Taken {
+            exit: &[Action::HideCamera],
+            ..base
+        }
+    );
+    assert_ne!(
+        base,
+        Taken {
+            emit: &[Action::UpdateOverlay],
+            ..base
+        }
+    );
+    assert_ne!(
+        base,
+        Taken {
+            entry: &[Action::ShowCamera],
+            ..base
+        }
+    );
+}
+
+#[test]
+fn exit_action_runs_on_leaving() {
+    let (mut m, mut w) = showing();
+
+    machine::dispatch(&mut m, &Event::GearChanged(Gear::Drive), &mut w);
+
+    assert_eq!(m.tag(), Tag::Off);
+    assert_eq!(w.performed, vec![Action::HideCamera]);
+    assert!(!w.camera_visible);
+}
+
+#[test]
+fn exit_and_entry_actions_run_in_order_across_a_round_trip() {
+    let mut m = off();
+    let mut w = World {
+        speed: Some(10.0),
+        ..Default::default()
+    };
+
+    machine::dispatch(&mut m, &Event::GearChanged(Gear::Reverse), &mut w);
+    machine::dispatch(&mut m, &Event::GearChanged(Gear::Drive), &mut w);
+
+    assert_eq!(m.tag(), Tag::Off);
+    assert_eq!(w.performed, vec![Action::ShowCamera, Action::HideCamera]);
+    assert!(!w.camera_visible);
+}
+
+#[test]
+fn internal_transition_skips_exit_and_entry() {
+    let (mut m, mut w) = showing();
+
+    let taken = machine::dispatch(&mut m, &Event::SpeedChanged, &mut w).unwrap();
+
+    assert_eq!(taken.edge, "CAM_OVERLAY");
+    assert_eq!(m.tag(), Tag::Showing);
+    // Neither HideCamera nor ShowCamera slips in.
+    assert_eq!(w.performed, vec![Action::UpdateOverlay]);
+}
+
+#[test]
+fn unknown_denies_transition_when_policy_is_deny() {
+    let mut m = off();
+    let mut w = World {
+        speed: None, // failed lookup -> SpeedBelowLimit = Unknown
+        ..Default::default()
+    };
+
+    assert!(machine::dispatch(&mut m, &Event::GearChanged(Gear::Reverse), &mut w).is_none());
+    assert_eq!(m.tag(), Tag::Off);
+    assert!(w.performed.is_empty());
+}
+
+#[test]
+fn unknown_allows_transition_when_policy_is_allow() {
+    let (mut m, mut w) = showing();
+
+    w.speed = None; // !SpeedBelowLimit = Unknown, and the policy is Allow
+    let taken = machine::dispatch(&mut m, &Event::SpeedChanged, &mut w).unwrap();
+
+    assert_eq!(taken.edge, "CAM_OFF_SPEED");
+    assert_eq!(m.tag(), Tag::Off);
+}
+
+#[test]
+fn declaration_order_is_priority() {
+    // Both CAM_OFF_SPEED and CAM_OVERLAY match (Showing, SpeedChanged). Their
+    // guards are mutually exclusive, so there is no real conflict; this pins down
+    // that declaration order decides.
+    let (mut m, mut w) = showing();
+
+    w.speed = Some(20.0); // !SpeedBelowLimit = True -> the earlier CAM_OFF_SPEED
+    assert_eq!(
+        machine::dispatch(&mut m, &Event::SpeedChanged, &mut w)
+            .unwrap()
+            .edge,
+        "CAM_OFF_SPEED"
+    );
+}
+
+#[test]
+fn declared_ignore_is_not_a_hole() {
+    let mut m = off();
+    let mut w = World::default();
+
+    assert!(machine::dispatch(&mut m, &Event::PowerChanged, &mut w).is_none());
+    assert_eq!(m.tag(), Tag::Off);
+}
+
+#[test]
+fn coverage_has_no_holes_and_no_unreachable_state() {
+    let c = verify::coverage::<RearCam>(Tag::Off, EDGES, IGNORES);
+
+    assert!(c.holes.is_empty(), "holes: {:?}", c.holes);
+    assert!(c.unreachable.is_empty(), "unreachable: {:?}", c.unreachable);
+    assert!(c.is_clean());
+
+    // Overlaps are reported even when the guards are mutually exclusive.
+    assert_eq!(c.overlaps.len(), 1);
+    assert_eq!(c.overlaps[0].2, vec!["CAM_OFF_SPEED", "CAM_OVERLAY"]);
+}
+
+#[test]
+fn mermaid_matches_golden() {
+    let expected = "\
+stateDiagram-v2
+    [*] --> Off
+    Showing : Showing<br/>entry / ShowCamera<br/>exit / HideCamera
+    Off --> Showing: GearChanged<br/>[GearIsReverse && SpeedBelowLimit]
+    Showing --> Off: GearChanged<br/>[!GearIsReverse]
+    Showing --> Off: SpeedChanged<br/>[!SpeedBelowLimit]<br/>unknown=Allow
+";
+
+    // No machine needed: the diagram comes from the static tables alone.
+    assert_eq!(
+        render::state_diagram::<RearCam>(Tag::Off, EDGES, STATES),
+        expected
+    );
+}
+
+#[test]
+fn internal_table_lists_state_preserving_edges() {
+    let table = render::internal_table::<RearCam>(EDGES);
+
+    assert!(table.contains("CAM_OVERLAY"), "{table}");
+    assert!(table.contains("UpdateOverlay"), "{table}");
+    // Edges that change state are not in this table.
+    assert!(!table.contains("CAM_ON"), "{table}");
+}
+
+#[test]
+fn caller_side_queue_processes_events_in_order() {
+    use std::collections::VecDeque;
+
+    let mut m = off();
+    let mut w = World {
+        speed: Some(10.0),
+        ..Default::default()
+    };
+
+    // Machine owns no queue. Driving it from the caller exposes each Taken.
+    let mut pending = VecDeque::from([Event::GearChanged(Gear::Reverse), Event::SpeedChanged]);
+    let mut taken = Vec::new();
+    while let Some(ev) = pending.pop_front() {
+        if let Some(t) = machine::dispatch(&mut m, &ev, &mut w) {
+            taken.push(t.edge);
+        }
+    }
+
+    assert_eq!(taken, vec!["CAM_ON", "CAM_OVERLAY"]);
+    assert_eq!(m.tag(), Tag::Showing);
+    assert_eq!(w.performed, vec![Action::ShowCamera, Action::UpdateOverlay]);
+}
+
+#[test]
+fn perform_sees_the_event_on_an_internal_transition() {
+    let (mut m, mut w) = showing();
+
+    // CAM_OVERLAY is Goto::Internal, so neither entry nor exit runs. Its action
+    // can still read the event, which is the only route to a payload here
+    // because Edge::run holds compile-time constants only.
+    let taken = machine::dispatch(&mut m, &Event::SpeedChanged, &mut w).unwrap();
+
+    assert_eq!(taken.edge, "CAM_OVERLAY");
+    assert_eq!(w.performed, vec![Action::UpdateOverlay]);
+    assert_eq!(w.performed_for, vec![Kind::SpeedChanged]);
+}
+
+/// The counterpart of the test above: entry and exit go through `perform_state`,
+/// which is handed no event, so nothing lands in `performed_for`.
+#[test]
+fn entry_and_exit_actions_are_performed_without_an_event() {
+    let (mut m, mut w) = showing();
+
+    machine::dispatch(&mut m, &Event::GearChanged(Gear::Drive), &mut w);
+
+    assert_eq!(w.performed, vec![Action::HideCamera]);
+    assert!(w.performed_for.is_empty());
+}
+
+#[test]
+fn ignore_table_lists_reasons() {
+    let table = render::ignore_table::<RearCam>(IGNORES);
+
+    assert!(table.contains("speed is irrelevant"), "{table}");
+    assert!(table.contains("power is handled"), "{table}");
+    // Source::Any is expanded into concrete states.
+    assert!(table.contains("`Off` | `PowerChanged`"), "{table}");
+    assert!(table.contains("`Showing` | `PowerChanged`"), "{table}");
+}
+
+#[test]
+fn render_parenthesises_negated_subexpressions() {
+    // check! only negates single nodes, but Expr can be built by hand (the
+    // documented route for `||`), and then precedence must survive rendering.
+    static NEGATED_AND: Expr<RearCam> = Expr::Not(&Expr::And(
+        &Expr::Node(&GearIsReverse),
+        &Expr::Node(&SpeedBelowLimit),
+    ));
+
+    assert_eq!(NEGATED_AND.render(), "!(GearIsReverse && SpeedBelowLimit)");
+    // A negated single node needs no parentheses.
+    assert_eq!(crate::check!(!GearIsReverse).render(), "!GearIsReverse");
+}
+
+/// `check!()` with no arguments. An edge with no guard is always taken.
+#[test]
+fn always_is_true_renders_empty_and_references_no_nodes() {
+    let w = World::default();
+    let ev = Event::PowerChanged;
+    let memo = Memo::new();
+    let cx: Cx<'_, RearCam> = Cx::new(&ev, &w, &memo);
+
+    let always: &Expr<RearCam> = crate::check!();
+
+    assert_eq!(always.eval(&cx), Cond::True);
+    assert_eq!(always.render(), "");
+
+    let mut ids = Vec::new();
+    always.node_ids(&mut ids);
+    assert!(ids.is_empty());
+}
+
+/// `||` has no macro form, so `Expr::Or` is built by hand.
+#[test]
+fn or_short_circuits_on_true() {
+    static EITHER: Expr<RearCam> =
+        Expr::Or(&Expr::Node(&GearIsReverse), &Expr::Node(&SpeedBelowLimit));
+
+    assert_eq!(EITHER.render(), "(GearIsReverse || SpeedBelowLimit)");
+
+    let mut ids = Vec::new();
+    EITHER.node_ids(&mut ids);
+    assert_eq!(ids.len(), 2);
+
+    // Left is True, so the speed is never looked up.
+    let w = World {
+        speed: None,
+        ..Default::default()
+    };
+    let ev = Event::GearChanged(Gear::Reverse);
+    let memo = Memo::new();
+    assert_eq!(EITHER.eval(&Cx::new(&ev, &w, &memo)), Cond::True);
+    assert_eq!(w.speed_lookups.get(), 0);
+
+    // Left is False, so the right operand decides — and its lookup fails.
+    let ev = Event::GearChanged(Gear::Drive);
+    let memo = Memo::new();
+    assert_eq!(EITHER.eval(&Cx::new(&ev, &w, &memo)), Cond::Unknown);
+    assert_eq!(w.speed_lookups.get(), 1);
+}
+
+/// A `False` on the left settles an `And`, so the right operand is skipped.
+#[test]
+fn and_short_circuits_on_false() {
+    let w = World {
+        speed: None,
+        ..Default::default()
+    };
+    let ev = Event::GearChanged(Gear::Drive); // GearIsReverse -> False
+    let memo = Memo::new();
+
+    let both = crate::check!(GearIsReverse && SpeedBelowLimit);
+
+    assert_eq!(both.eval(&Cx::new(&ev, &w, &memo)), Cond::False);
+    assert_eq!(w.speed_lookups.get(), 0);
+}
+
+#[test]
+fn macros_generate_exhaustive_lists() {
+    use crate::Enumerable;
+
+    // The macros supply what all_tags/all_kinds used to spell out by hand.
+    assert_eq!(RearCam::all_tags(), &[Tag::Off, Tag::Showing]);
+    assert_eq!(
+        RearCam::all_kinds(),
+        &[Kind::GearChanged, Kind::SpeedChanged, Kind::PowerChanged]
+    );
+    assert_eq!(Tag::ALL.len(), 2);
+    assert_eq!(Kind::ALL.len(), 3);
+}
+
+#[test]
+fn generated_kind_maps_payload_and_unit_variants() {
+    use crate::HasKind;
+
+    // Payload-carrying and unit variants expand under the same rule.
+    assert_eq!(Event::GearChanged(Gear::Reverse).kind(), Kind::GearChanged);
+    assert_eq!(Event::GearChanged(Gear::Drive).kind(), Kind::GearChanged);
+    assert_eq!(Event::SpeedChanged.kind(), Kind::SpeedChanged);
+    assert_eq!(Event::PowerChanged.kind(), Kind::PowerChanged);
+}
+
+#[test]
+fn source_any_except_matches_all_but_listed() {
+    let s = Source::<RearCam>::AnyExcept(&[Tag::Showing]);
+
+    assert!(s.matches(Tag::Off));
+    assert!(!s.matches(Tag::Showing));
+}
+
+#[test]
+fn source_any_matches_every_tag() {
+    let s = Source::<RearCam>::Any;
+
+    assert!(s.matches(Tag::Off));
+    assert!(s.matches(Tag::Showing));
+}
+
+#[test]
+fn ignore_any_except_matches_multiple_tags() {
+    let ignore = Ignore::<RearCam> {
+        from: Source::AnyExcept(&[Tag::Showing]),
+        when: &[Kind::PowerChanged],
+        why: "test",
+    };
+
+    assert!(ignore.matches(Tag::Off, Kind::PowerChanged));
+    assert!(!ignore.matches(Tag::Showing, Kind::PowerChanged));
+    assert!(!ignore.matches(Tag::Off, Kind::GearChanged));
+}
+
+// ─────────────────────────────────────────── narrowed domain
+// `Domain::all_tags` may be overridden to check a subset, which takes the excluded
+// tags out of the first validation loop. Edge targets are checked separately.
+
+struct PartialCam;
+
+impl Domain for PartialCam {
+    type Event = Event;
+    type EventKind = Kind;
+    type World = World;
+}
+
+impl MachineSpec for PartialCam {
+    const NAME: &'static str = "PartialCam";
+
+    type Domain = PartialCam;
+    type Tag = Tag;
+    type Action = Action;
+    type StateAction = Action;
+
+    fn perform(_action: Action, _ev: &Event, _world: &mut World) {}
+    fn perform_state(_action: Action, _world: &mut World) {}
+
+    const STATES: &'static [State<PartialCam>] = PARTIAL_STATES;
+    const EDGES: &'static [Edge<PartialCam>] = PARTIAL_EDGES;
+    const IGNORES: &'static [Ignore<PartialCam>] = PARTIAL_IGNORES;
+
+    fn all_tags() -> &'static [Tag] {
+        &[Tag::Off]
+    }
+}
+
+static PARTIAL_STATES: &[State<PartialCam>] = &[State {
+    tag: Tag::Off,
+    entry: &[],
+    exit: &[],
+}];
+
+static PARTIAL_EDGES: &[Edge<PartialCam>] = &[Edge {
+    id: "TO_UNDECLARED",
+    from: Source::These(&[Tag::Off]),
+    when: Kind::GearChanged,
+    check: crate::check!(),
+    unknown: OnUnknown::Deny,
+    emit: &[],
+    goto: Goto::To(Tag::Showing), // absent from all_tags and from PARTIAL_STATES
+}];
+
+static PARTIAL_IGNORES: &[Ignore<PartialCam>] = &[Ignore {
+    from: Source::Any,
+    when: &[Kind::SpeedChanged, Kind::PowerChanged],
+    why: "outside this fixture",
+}];
+
+/// A `Goto::To` pointing outside the state table is rejected at construction, not
+/// when the transition is eventually taken.
+#[test]
+#[should_panic(expected = "edge TO_UNDECLARED goes to Showing")]
+fn an_edge_targeting_a_tag_outside_the_state_table_is_rejected() {
+    let _ = Machine::<PartialCam>::new(Tag::Off);
+}
+
+/// Narrowing `all_tags` scopes the walk: only `Off` is checked, so `Showing`
+/// shows up as neither a hole nor unreachable.
+#[test]
+fn a_narrowed_spec_checks_only_the_listed_tags() {
+    let c = verify::coverage::<PartialCam>(Tag::Off, PARTIAL_EDGES, PARTIAL_IGNORES);
+
+    assert!(c.holes.is_empty(), "{:?}", c.holes);
+    assert!(c.unreachable.is_empty(), "{:?}", c.unreachable);
+    assert!(c.is_clean());
+}
+
+/// `all_tags` narrows the coverage check, nothing else. `expand` walks every tag
+/// so that diagrams keep matching what `matches` does at dispatch.
+#[test]
+fn expand_covers_every_tag_even_where_all_tags_is_narrowed() {
+    assert_eq!(PartialCam::all_tags(), &[Tag::Off]);
+
+    let any: Source<PartialCam> = Source::Any;
+    assert_eq!(any.expand(), vec![Tag::Off, Tag::Showing]);
+    assert!(any.matches(Tag::Showing));
+}
+
+// ─────────────────────────────────────────── every defect at once
+// `coverage` is generic, so each spec it is used with is compiled separately.
+// Feeding a table carrying every defect class through the main fixture keeps
+// that copy exercised end to end.
+
+crate::cond_node!(RearCam, Duplicated, |_cx| Cond::True);
+
+struct AlsoDuplicated;
+struct StillDuplicated;
+
+impl crate::guard::CondNode<RearCam> for AlsoDuplicated {
+    fn name(&self) -> &'static str {
+        "Duplicated"
+    }
+    fn eval(&self, _cx: &Cx<'_, RearCam>) -> Cond {
+        Cond::True
+    }
+}
+
+// A third type on the same name, so the report is proved to list it once.
+impl crate::guard::CondNode<RearCam> for StillDuplicated {
+    fn name(&self) -> &'static str {
+        "Duplicated"
+    }
+    fn eval(&self, _cx: &Cx<'_, RearCam>) -> Cond {
+        Cond::True
+    }
+}
+
+static DEFECTIVE_EDGES: &[Edge<RearCam>] = &[
+    Edge {
+        id: "DUPED",
+        from: Source::These(&[Tag::Off]),
+        when: Kind::GearChanged,
+        check: crate::check!(),
+        unknown: OnUnknown::Deny,
+        emit: &[],
+        goto: Goto::To(Tag::Off),
+    },
+    Edge {
+        id: "DUPED", // same id, and a second edge on the same combination
+        from: Source::These(&[Tag::Off]),
+        when: Kind::GearChanged,
+        check: crate::check!(),
+        unknown: OnUnknown::Deny,
+        emit: &[],
+        goto: Goto::Internal,
+    },
+    Edge {
+        id: "DUPED", // a third, to be reported once
+        from: Source::These(&[Tag::Off]),
+        when: Kind::SpeedChanged,
+        check: &Expr::And(
+            &Expr::Node(&Duplicated),
+            &Expr::And(&Expr::Node(&AlsoDuplicated), &Expr::Node(&StillDuplicated)),
+        ),
+        unknown: OnUnknown::Deny,
+        emit: &[],
+        goto: Goto::To(Tag::Off),
+    },
+    Edge {
+        id: "STUCK", // leaves and enters a state nothing else reaches
+        from: Source::These(&[Tag::Showing]),
+        when: Kind::PowerChanged,
+        check: crate::check!(),
+        unknown: OnUnknown::Deny,
+        emit: &[],
+        goto: Goto::To(Tag::Showing),
+    },
+];
+
+static DEFECTIVE_IGNORES: &[Ignore<RearCam>] = &[Ignore {
+    from: Source::These(&[Tag::Off]),
+    when: &[Kind::GearChanged],
+    why: "test: contradicted by two edges",
+}];
+
+#[test]
+fn coverage_reports_every_defect_class_from_one_table() {
+    let c = verify::coverage::<RearCam>(Tag::Off, DEFECTIVE_EDGES, DEFECTIVE_IGNORES);
+
+    assert!(!c.is_clean());
+    assert_eq!(c.duplicate_edge_ids, vec!["DUPED"]);
+    assert_eq!(c.duplicate_node_names, vec!["Duplicated"]);
+    assert_eq!(c.unreachable, vec!["Showing"]);
+    assert_eq!(
+        c.ignored_but_handled,
+        vec![(
+            "Off".to_owned(),
+            "GearChanged".to_owned(),
+            vec!["DUPED", "DUPED"]
+        )]
+    );
+    assert!(
+        c.holes
+            .contains(&("Off".to_owned(), "PowerChanged".to_owned())),
+        "{:?}",
+        c.holes
+    );
+    assert_eq!(c.overlaps.len(), 1, "{:?}", c.overlaps);
+}
+
+// ─────────────────────────────────────────── reachability chain
+// Reachability iterates to a fixed point, so a chain whose edges are declared
+// out of order takes more than one pass over the table.
+
+crate::tags! {
+    enum ChainTag {
+        First,
+        Middle,
+        Last,
+    }
+}
+
+struct ChainSm;
+
+impl MachineSpec for ChainSm {
+    const NAME: &'static str = "ChainSm";
+
+    type Domain = RearCam;
+    type Tag = ChainTag;
+    type Action = Action;
+    type StateAction = Action;
+
+    const STATES: &'static [State<ChainSm>] = CHAIN_STATES;
+    const EDGES: &'static [Edge<ChainSm>] = CHAIN_EDGES;
+    const IGNORES: &'static [Ignore<ChainSm>] = &[];
+
+    fn perform(action: Action, ev: &Event, world: &mut World) {
+        perform_for_event(action, ev, world);
+    }
+
+    fn perform_state(action: Action, world: &mut World) {
+        perform_action(action, world);
+    }
+}
+
+static CHAIN_STATES: &[State<ChainSm>] = &[
+    State {
+        tag: ChainTag::First,
+        entry: &[],
+        exit: &[],
+    },
+    State {
+        tag: ChainTag::Middle,
+        entry: &[],
+        exit: &[],
+    },
+    State {
+        tag: ChainTag::Last,
+        entry: &[],
+        exit: &[],
+    },
+];
+
+static CHAIN_EDGES: &[Edge<ChainSm>] = &[
+    // Declared before the edge that makes `Middle` reachable at all.
+    Edge {
+        id: "MIDDLE_TO_LAST",
+        from: Source::These(&[ChainTag::Middle]),
+        when: Kind::SpeedChanged,
+        check: crate::check!(),
+        unknown: OnUnknown::Deny,
+        emit: &[],
+        goto: Goto::To(ChainTag::Last),
+    },
+    Edge {
+        id: "FIRST_TO_MIDDLE",
+        from: Source::These(&[ChainTag::First]),
+        when: Kind::GearChanged,
+        check: crate::check!(),
+        unknown: OnUnknown::Deny,
+        emit: &[],
+        goto: Goto::To(ChainTag::Middle),
+    },
+];
+
+#[test]
+fn reachability_follows_a_chain_declared_out_of_order() {
+    let c = verify::coverage::<ChainSm>(ChainTag::First, CHAIN_EDGES, &[]);
+
+    assert!(c.unreachable.is_empty(), "{:?}", c.unreachable);
+}
+
+// ─────────────────────────────────────────── defective table
+// RearCam is deliberately clean, so the diagnostics never fire on it. This table
+// trips each of them: a hole, an unreachable state, one guard name shared by
+// three node types, one id shared by two edges, and an `Ignore` an edge
+// contradicts.
+
+struct Broken;
+
+impl Domain for Broken {
+    type Event = Event;
+    type EventKind = Kind;
+    type World = World;
+}
+
+impl MachineSpec for Broken {
+    const NAME: &'static str = "Broken";
+
+    type Domain = Broken;
+    type Tag = Tag;
+    type Action = Action;
+    type StateAction = Action;
+
+    fn perform(_action: Action, _ev: &Event, _world: &mut World) {}
+    fn perform_state(_action: Action, _world: &mut World) {}
+
+    const STATES: &'static [State<Broken>] = BROKEN_STATES;
+    const EDGES: &'static [Edge<Broken>] = BROKEN_EDGES;
+    const IGNORES: &'static [Ignore<Broken>] = BROKEN_IGNORES;
+}
+
+crate::cond_node!(Broken, Duplicate, |_cx| Cond::True);
+
+struct AlsoDuplicate;
+struct StillDuplicate;
+
+impl crate::guard::CondNode<Broken> for AlsoDuplicate {
+    fn name(&self) -> &'static str {
+        "Duplicate"
+    }
+    fn eval(&self, _cx: &Cx<'_, Broken>) -> Cond {
+        Cond::True
+    }
+}
+
+impl crate::guard::CondNode<Broken> for StillDuplicate {
+    fn name(&self) -> &'static str {
+        "Duplicate"
+    }
+    fn eval(&self, _cx: &Cx<'_, Broken>) -> Cond {
+        Cond::True
+    }
+}
+
+/// `Showing` is missing, so `state_diagram` has no description to draw for it.
+static BROKEN_STATES: &[State<Broken>] = &[State {
+    tag: Tag::Off,
+    entry: &[],
+    exit: &[],
+}];
+
+static BROKEN_EDGES: &[Edge<Broken>] = &[
+    Edge {
+        id: "NO_GUARD",
+        from: Source::These(&[Tag::Off]),
+        when: Kind::GearChanged,
+        check: crate::check!(),
+        unknown: OnUnknown::Deny,
+        emit: &[Action::UpdateOverlay],
+        goto: Goto::To(Tag::Off), // nothing reaches Showing
+    },
+    Edge {
+        id: "DUPED_NAMES",
+        from: Source::These(&[Tag::Off]),
+        when: Kind::SpeedChanged,
+        check: &Expr::And(
+            &Expr::Node(&Duplicate),
+            &Expr::And(&Expr::Node(&AlsoDuplicate), &Expr::Node(&StillDuplicate)),
+        ),
+        unknown: OnUnknown::Deny,
+        emit: &[],
+        goto: Goto::To(Tag::Off),
+    },
+    Edge {
+        id: "SILENT_INTERNAL",
+        from: Source::These(&[Tag::Off]),
+        when: Kind::PowerChanged,
+        check: crate::check!(),
+        unknown: OnUnknown::Deny,
+        emit: &[],
+        goto: Goto::Internal,
+    },
+    Edge {
+        id: "NO_GUARD", // the id is already taken
+        from: Source::These(&[Tag::Off]),
+        when: Kind::SpeedChanged,
+        check: crate::check!(),
+        unknown: OnUnknown::Deny,
+        emit: &[],
+        goto: Goto::To(Tag::Off),
+    },
+    Edge {
+        id: "NO_GUARD", // and taken a third time, to be reported once
+        from: Source::These(&[Tag::Off]),
+        when: Kind::PowerChanged,
+        check: crate::check!(),
+        unknown: OnUnknown::Deny,
+        emit: &[],
+        goto: Goto::To(Tag::Off),
+    },
+];
+
+/// `GearChanged` is declared off limits in `Off`, but `NO_GUARD` handles it.
+static BROKEN_IGNORES: &[Ignore<Broken>] = &[Ignore {
+    from: Source::These(&[Tag::Off]),
+    when: &[Kind::GearChanged],
+    why: "test: contradicted by an edge",
+}];
+
+#[test]
+fn coverage_reports_holes_unreachable_states_and_duplicate_names() {
+    let c = verify::coverage::<Broken>(Tag::Off, BROKEN_EDGES, &[]);
+
+    assert!(!c.is_clean());
+    // Nothing is declared for Showing at all.
+    assert!(
+        c.holes
+            .contains(&("Showing".to_owned(), "GearChanged".to_owned())),
+        "{:?}",
+        c.holes
+    );
+    assert_eq!(c.unreachable, vec!["Showing"]);
+    // Reported once, however many types share the name.
+    assert_eq!(c.duplicate_node_names, vec!["Duplicate"]);
+}
+
+/// The id has to survive reordering of the table, so two edges may not share it.
+#[test]
+fn coverage_reports_a_duplicate_edge_id() {
+    let c = verify::coverage::<Broken>(Tag::Off, BROKEN_EDGES, &[]);
+
+    assert_eq!(c.duplicate_edge_ids, vec!["NO_GUARD"]);
+    assert!(!c.is_clean());
+}
+
+/// Each defect list vetoes `is_clean` on its own. A table carrying several at
+/// once cannot show that, since the first empty check short-circuits the rest.
+#[test]
+fn is_clean_requires_every_defect_list_to_be_empty() {
+    fn with(fill: impl FnOnce(&mut verify::Coverage)) -> verify::Coverage {
+        let mut c = verify::Coverage::default();
+        fill(&mut c);
+        c
+    }
+    let state = || "Off".to_owned();
+    let kind = || "GearChanged".to_owned();
+
+    assert!(verify::Coverage::default().is_clean());
+
+    assert!(!with(|c| c.holes.push((state(), kind()))).is_clean());
+    assert!(!with(|c| c.ignored_but_handled.push((state(), kind(), vec!["E"]))).is_clean());
+    assert!(!with(|c| c.unreachable.push(state())).is_clean());
+    assert!(!with(|c| c.duplicate_node_names.push("Dup")).is_clean());
+    assert!(!with(|c| c.duplicate_edge_ids.push("E")).is_clean());
+
+    // A review signal, not a defect.
+    assert!(with(|c| c.overlaps.push((state(), kind(), vec!["A", "B"]))).is_clean());
+}
+
+/// An `Ignore` bans a combination outright, so an edge on it is a defect however
+/// the edge is guarded.
+#[test]
+fn coverage_reports_an_ignore_an_edge_contradicts() {
+    let c = verify::coverage::<Broken>(Tag::Off, BROKEN_EDGES, BROKEN_IGNORES);
+
+    assert_eq!(
+        c.ignored_but_handled,
+        vec![("Off".to_owned(), "GearChanged".to_owned(), vec!["NO_GUARD"])]
+    );
+    assert!(!c.is_clean());
+}
+
+#[test]
+fn mermaid_labels_a_guardless_edge_and_its_run_actions() {
+    let diagram = render::state_diagram::<Broken>(Tag::Off, BROKEN_EDGES, BROKEN_STATES);
+
+    assert!(
+        diagram.contains("Off --> Off: GearChanged<br/>/ UpdateOverlay"),
+        "{diagram}"
+    );
+    // Showing has no state table entry, so it gets no description line.
+    assert!(!diagram.contains("Showing :"), "{diagram}");
+}
+
+#[test]
+fn internal_table_dashes_an_empty_guard() {
+    let table = render::internal_table::<Broken>(BROKEN_EDGES);
+
+    assert!(table.contains("`SILENT_INTERNAL`"), "{table}");
+    assert!(table.contains("`—`"), "{table}");
+}
 
 // ─────────────────────────────────────────── feature layer
 // The same domain, driven without a transition table. `RearCam` has states, but
@@ -514,80 +1521,116 @@ fn rule_table_marks_an_allowing_rule() {
     );
 }
 
-// ─────────────────────────────────────────── one event at a time
+// ─────────────────────────────────────────── one trigger set at a time
 
-/// One signal's whole answer, features included, and nothing else.
-#[test]
-fn event_table_gathers_one_kind_across_features() {
-    let table = render::event_table(CAMERA_FEATURES, Kind::GearChanged);
+/// The same set written in two orders, so grouping has to ignore order.
+struct Reordered;
 
-    assert!(table.contains("`CAMERA_1`"), "{table}");
-    assert!(table.contains("`CAMERA_2`"), "{table}");
-    // Overlay reacts to SpeedChanged alone, so it contributes no row here.
-    assert!(!table.contains("`OVERLAY_1`"), "{table}");
+impl Feature for Reordered {
+    type Domain = RearCam;
+    type Action = CamAction;
+
+    const NAME: &'static str = "Reordered";
+
+    const RULES: &'static [Rule<RearCam, CamAction>] = &[
+        Rule {
+            id: "REORDERED_1",
+            when: &[Kind::SpeedChanged, Kind::GearChanged],
+            check: crate::check!(GearIsReverse),
+            unknown: OnUnknown::Deny,
+            emit: &[CamAction::ShowCamera],
+        },
+        Rule {
+            id: "REORDERED_2",
+            when: &[Kind::GearChanged, Kind::SpeedChanged],
+            check: crate::check!(),
+            unknown: OnUnknown::Deny,
+            emit: &[CamAction::HideCamera],
+        },
+    ];
+
+    fn perform(action: CamAction, ev: &Event, world: &mut World) {
+        Camera::perform(action, ev, world);
+    }
 }
 
-/// The `when` column survives the filter, so a rule appearing under two signals
-/// says why.
+/// Distinct sets in first-appearance order, each in declaration order.
 #[test]
-fn event_table_keeps_the_whole_trigger_set() {
-    let table = render::event_table(&[&Noisy], Kind::PowerChanged);
-
-    assert!(
-        table.contains("| `Noisy` | `NOISY_2` | `GearChanged`, `PowerChanged` |"),
-        "{table}"
+fn when_groups_lists_each_distinct_set_once() {
+    assert_eq!(render::when_groups(&Camera), vec![vec![Kind::GearChanged]]);
+    assert_eq!(
+        render::when_groups(&Noisy),
+        vec![
+            vec![Kind::GearChanged, Kind::SpeedChanged],
+            vec![Kind::GearChanged, Kind::PowerChanged],
+        ]
     );
 }
 
-/// Shadowing is a question about one signal, not about a feature: `NOISY_2` is
-/// `NOISY_1`'s fallback on `GearChanged` and unconditional on `PowerChanged`.
 #[test]
-fn event_table_decides_else_against_the_event_not_the_feature() {
-    let gear = render::event_table(&[&Noisy], Kind::GearChanged);
-    let power = render::event_table(&[&Noisy], Kind::PowerChanged);
+fn when_groups_ignores_the_order_a_set_is_written_in() {
+    assert_eq!(
+        render::when_groups(&Reordered),
+        vec![vec![Kind::GearChanged, Kind::SpeedChanged]]
+    );
+}
 
-    assert!(gear.contains("| `NOISY_2` | `GearChanged`, `PowerChanged` | else |"), "{gear}");
-    assert!(power.contains("| `NOISY_2` | `GearChanged`, `PowerChanged` | — |"), "{power}");
+/// Only rules with exactly this set, not rules that merely share an event.
+#[test]
+fn when_table_selects_the_exact_set() {
+    let table = render::when_table(&Noisy, &[Kind::GearChanged, Kind::SpeedChanged]);
+
+    assert!(table.contains("`NOISY_1`"), "{table}");
+    assert!(!table.contains("`NOISY_2`"), "{table}");
 }
 
 #[test]
-fn event_table_is_empty_for_a_kind_nothing_takes() {
-    let table = render::event_table(CAMERA_FEATURES, Kind::PowerChanged);
+fn when_table_gathers_a_set_written_in_either_order() {
+    let table = render::when_table(&Reordered, &[Kind::GearChanged, Kind::SpeedChanged]);
 
-    assert!(table.lines().count() == 2, "header only, got:\n{table}");
+    assert!(table.contains("| `REORDERED_1` | `GearIsReverse` | `ShowCamera` |"), "{table}");
+    assert!(table.contains("| `REORDERED_2` | else | `HideCamera` |"), "{table}");
 }
 
-/// Only the features and rules that react to this kind appear.
+/// `NOISY_2` sits alone in its group, but `NOISY_1` shares `GearChanged` and
+/// is tried first, so it is still a fallback.
 #[test]
-fn event_flowchart_draws_one_kind_and_its_features() {
-    let declared = render::event_flowchart(CAMERA_FEATURES, Kind::GearChanged);
+fn when_table_judges_else_against_the_whole_feature() {
+    let table = render::when_table(&Noisy, &[Kind::GearChanged, Kind::PowerChanged]);
 
-    assert!(declared.contains(r#"ev_GearChanged["GearChanged"] --> ft_Camera["Camera"]"#));
+    assert!(table.contains("| `NOISY_2` | else | `ShowCamera` |"), "{table}");
+}
+
+#[test]
+fn when_table_marks_an_allowing_rule() {
+    let table = render::when_table(&Optimist, &[Kind::SpeedChanged]);
+
+    assert!(table.contains("(unknown=Allow)"), "{table}");
+}
+
+/// Every event of the set enters the feature once.
+#[test]
+fn when_flowchart_draws_every_event_of_the_set() {
+    let declared = render::when_flowchart(&Noisy, &[Kind::GearChanged, Kind::SpeedChanged]);
+
+    assert!(declared.contains(r#"ev_GearChanged["GearChanged"] --> ft_Noisy["Noisy"]"#));
+    assert!(declared.contains(r#"ev_SpeedChanged["SpeedChanged"] --> ft_Noisy["Noisy"]"#));
+    assert!(!declared.contains("ev_PowerChanged"), "{declared}");
+    assert!(declared.contains(r#""NOISY_1<br/>GearIsReverse""#), "{declared}");
+    assert!(!declared.contains("NOISY_2"), "{declared}");
+}
+
+/// An arrow names the rule that produced the action, then its guard.
+#[test]
+fn when_flowchart_labels_arrows_with_their_rule_and_guard() {
+    let declared = render::when_flowchart(&Camera, &[Kind::GearChanged]);
+
     assert!(
         declared.contains(
             r#"ft_Camera["Camera"] -->|"CAMERA_1<br/>GearIsReverse"| ac_Camera_ShowCamera["ShowCamera"]"#
         ),
         "{declared}"
     );
-    assert!(!declared.contains("ft_Overlay"), "{declared}");
-    assert!(!declared.contains("ev_SpeedChanged"), "{declared}");
-}
-
-/// An action node id carries its feature: two features that name an effect
-/// alike are drawing two different effects, so the nodes must not merge.
-#[test]
-fn event_flowchart_scopes_action_nodes_to_their_feature() {
-    let declared = render::event_flowchart(&[&Camera, &Noisy], Kind::GearChanged);
-
-    assert!(declared.contains("ac_Camera_ShowCamera"), "{declared}");
-    assert!(declared.contains("ac_Noisy_ShowCamera"), "{declared}");
-}
-
-/// An arrow names the rule that produced the action, then its guard.
-#[test]
-fn event_flowchart_labels_arrows_with_their_rule_and_guard() {
-    let declared = render::event_flowchart(&[&Camera], Kind::GearChanged);
-
     assert!(
         declared.contains(
             r#"ft_Camera["Camera"] -->|"CAMERA_2<br/>else"| ac_Camera_HideCamera["HideCamera"]"#
@@ -598,8 +1641,8 @@ fn event_flowchart_labels_arrows_with_their_rule_and_guard() {
 
 /// An unconditional rule's arrow carries its id and nothing else.
 #[test]
-fn event_flowchart_labels_an_unconditional_arrow_with_the_id_alone() {
-    let declared = render::event_flowchart(&[&Always], Kind::PowerChanged);
+fn when_flowchart_labels_an_unconditional_arrow_with_the_id_alone() {
+    let declared = render::when_flowchart(&Always, &[Kind::PowerChanged]);
 
     assert!(
         declared.contains(
@@ -612,29 +1655,35 @@ fn event_flowchart_labels_an_unconditional_arrow_with_the_id_alone() {
 /// A node id may not carry punctuation — mermaid ends the identifier at `(`
 /// and fails to parse the line. The quoted label keeps it.
 #[test]
-fn event_flowchart_folds_punctuation_out_of_node_ids() {
-    let declared = render::event_flowchart(&[&Payload], Kind::GearChanged);
+fn when_flowchart_folds_punctuation_out_of_node_ids() {
+    let declared = render::when_flowchart(&Payload, &[Kind::GearChanged]);
 
-    assert!(
-        declared.contains(r#"ac_Payload_Show_7_["Show(7)"]"#),
-        "{declared}"
-    );
+    assert!(declared.contains(r#"ac_Payload_Show_7_["Show(7)"]"#), "{declared}");
     assert!(!declared.contains("ac_Payload_Show(7)"), "{declared}");
-}
-
-#[test]
-fn event_flowchart_is_bare_for_a_kind_nothing_takes() {
-    assert_eq!(
-        render::event_flowchart(CAMERA_FEATURES, Kind::PowerChanged),
-        "flowchart LR\n"
-    );
 }
 
 #[test]
 fn unhandled_kinds_reports_what_no_feature_takes() {
     // PowerChanged is in the event enum but no feature declares it.
     assert_eq!(
-        verify::unhandled_kinds(CAMERA_FEATURES),
+        verify::unhandled_kinds(CAMERA_FEATURES, &[]),
+        vec![Kind::PowerChanged]
+    );
+}
+
+/// A controller that mixes both layers is checked as one unit. An `Ignore` does
+/// not make a kind handled — the table only says the machine has no use for it.
+#[test]
+fn unhandled_kinds_counts_edges_but_not_ignores() {
+    let by_machine = verify::handled_kinds::<RearCam>(EDGES);
+
+    assert!(by_machine.contains(&Kind::GearChanged));
+    assert!(
+        !by_machine.contains(&Kind::PowerChanged),
+        "PowerChanged only has an Ignore"
+    );
+    assert_eq!(
+        verify::unhandled_kinds(CAMERA_FEATURES, &[&by_machine]),
         vec![Kind::PowerChanged]
     );
 }
@@ -714,8 +1763,8 @@ impl Feature for Colliding {
 /// on two rules, and `CAMERA_FEATURES` spreads nodes across two features.
 #[test]
 fn duplicate_node_names_passes_a_node_reused_across_rules_and_features() {
-    assert!(verify::duplicate_node_names(&[&Shared]).is_empty());
-    assert!(verify::duplicate_node_names(CAMERA_FEATURES).is_empty());
+    assert!(verify::duplicate_node_names(&[&Shared], &[]).is_empty());
+    assert!(verify::duplicate_node_names(CAMERA_FEATURES, &[]).is_empty());
 }
 
 /// Two types, one name. Nothing in the feature layer caught this before, and
@@ -723,21 +1772,30 @@ fn duplicate_node_names_passes_a_node_reused_across_rules_and_features() {
 #[test]
 fn duplicate_node_names_reports_two_types_sharing_a_name() {
     assert_eq!(
-        verify::duplicate_node_names(&[&Colliding]),
+        verify::duplicate_node_names(&[&Colliding], &[]),
         vec!["SpeedBelowLimit"]
     );
 }
 
-/// The collision no single feature can see: each names one of the two nodes, so
-/// each is clean alone. Only a scan across the controller finds it.
+/// The collision that spans the layers: the feature names one node, the machine
+/// table names the other. Neither `coverage` nor a per-feature scan can see it,
+/// which is why the check takes both.
 #[test]
-fn duplicate_node_names_spans_two_features() {
-    // `Colliding2` names only `elsewhere`'s node, `Overlay` only the original.
-    assert!(verify::duplicate_node_names(&[&Colliding2]).is_empty());
-    assert!(verify::duplicate_node_names(&[&Overlay]).is_empty());
+fn duplicate_node_names_spans_features_and_machines() {
+    let by_machine = verify::guard_nodes::<RearCam>(EDGES);
 
+    // The machine table alone is clean: it only ever names the original node.
+    assert!(
+        verify::coverage::<RearCam>(Tag::Off, EDGES, IGNORES)
+            .duplicate_node_names
+            .is_empty()
+    );
+    // So is the feature that names only the other one.
+    assert!(verify::duplicate_node_names(&[&Colliding2], &[]).is_empty());
+
+    // Together they collide.
     assert_eq!(
-        verify::duplicate_node_names(&[&Colliding2, &Overlay]),
+        verify::duplicate_node_names(&[&Colliding2], &[&by_machine]),
         vec!["SpeedBelowLimit"]
     );
 }
@@ -762,6 +1820,20 @@ impl Feature for Colliding2 {
     fn perform(action: OverlayAction, ev: &Event, world: &mut World) {
         Overlay::perform(action, ev, world);
     }
+}
+
+/// `guard_nodes` reports every reference, repeats included — deduping is
+/// `duplicate_node_names`' job, since a name is only a defect when a *second
+/// type* carries it.
+#[test]
+fn guard_nodes_keeps_repeat_references() {
+    let ids = verify::guard_nodes::<RearCam>(EDGES);
+    let gear = ids
+        .iter()
+        .filter(|(n, _)| *n == "GearIsReverse")
+        .count();
+
+    assert!(gear > 1, "{ids:?}");
 }
 
 /// The consequence the check is standing in for: with two nodes sharing a name,
@@ -837,124 +1909,20 @@ fn duplicate_rule_ids_reports_a_repeat_across_features() {
     );
 }
 
-/// A guard saying no is not the same as nothing covering the event. `Optimist`
-/// reacts to `SpeedChanged`, so the kind is handled; the rule just declines.
+/// A guard saying no is not a gap in the table, so it does not reach the
+/// `NoRow` branch. `Off` has a `GearChanged` edge; its guard just fails here.
 #[test]
-fn a_declining_guard_is_not_a_missing_rule() {
-    let mut w = World {
-        speed: Some(200.0),
-        ..Default::default()
-    };
-
-    assert!(Optimist.dispatch(&Event::SpeedChanged, &mut w).is_none());
-    assert!(w.performed.is_empty());
-    assert!(Optimist.handles().contains(&Kind::SpeedChanged));
-}
-
-// ─────────────────────────────────────────── guard expressions
-// The tree itself, independent of any table that holds one.
-
-/// `Not` is parenthesised so `!(A && B)` cannot be read as `!A && B`.
-#[test]
-fn render_parenthesises_negated_subexpressions() {
-    let inner: &'static Expr<RearCam> = crate::check!(GearIsReverse && SpeedBelowLimit);
-    let negated = Expr::Not(inner);
-
-    assert_eq!(negated.render(), "!(GearIsReverse && SpeedBelowLimit)");
-    assert_eq!(
-        Expr::<RearCam>::Not(crate::check!(GearIsReverse)).render(),
-        "!GearIsReverse"
-    );
-}
-
-/// An empty `check!` is always true, renders to nothing, and names no node — so
-/// an unguarded rule adds no column and no name to any report.
-#[test]
-fn always_is_true_renders_empty_and_references_no_nodes() {
-    let always: &'static Expr<RearCam> = crate::check!();
-    let w = World::default();
-    let memo = Memo::new();
-    let cx = Cx::new(&Event::SpeedChanged, &w, &memo);
-
-    assert_eq!(always.eval(&cx), Cond::True);
-    assert_eq!(always.render(), "");
-
-    let mut ids = Vec::new();
-    always.node_ids(&mut ids);
-    assert!(ids.is_empty());
-}
-
-/// `Or` stops at the first `True`, so the right side is never asked.
-#[test]
-fn or_short_circuits_on_true() {
-    let w = World {
-        // Would be Unknown if it were reached.
-        speed: None,
-        ..Default::default()
-    };
-    let memo = Memo::new();
-    let cx = Cx::new(&Event::GearChanged(Gear::Reverse), &w, &memo);
-    let expr: Expr<RearCam> = Expr::Or(
-        crate::check!(GearIsReverse),
-        crate::check!(SpeedBelowLimit),
-    );
-
-    assert_eq!(expr.eval(&cx), Cond::True);
-    assert_eq!(w.speed_lookups.get(), 0, "right side was evaluated");
-}
-
-/// `And` stops at the first `False`, likewise.
-#[test]
-fn and_short_circuits_on_false() {
-    let w = World {
-        speed: None,
-        ..Default::default()
-    };
-    let memo = Memo::new();
-    let cx = Cx::new(&Event::GearChanged(Gear::Drive), &w, &memo);
-    let expr: Expr<RearCam> = Expr::And(
-        crate::check!(GearIsReverse),
-        crate::check!(SpeedBelowLimit),
-    );
-
-    assert_eq!(expr.eval(&cx), Cond::False);
-    assert_eq!(w.speed_lookups.get(), 0, "right side was evaluated");
-}
-
-// ─────────────────────────────────────────── generated declarations
-
-/// `events!` produces the kind list the reports walk, complete by construction.
-#[test]
-fn events_generates_an_exhaustive_kind_list() {
-    assert_eq!(
-        <Kind as Enumerable>::ALL,
-        &[Kind::GearChanged, Kind::SpeedChanged, Kind::PowerChanged]
-    );
-}
-
-/// One `HasKind` arm per variant, whether or not the variant carries a payload.
-#[test]
-fn generated_kind_maps_payload_and_unit_variants() {
-    assert_eq!(Event::GearChanged(Gear::Reverse).kind(), Kind::GearChanged);
-    assert_eq!(Event::SpeedChanged.kind(), Kind::SpeedChanged);
-}
-
-/// Dispatch is not re-entrant by design: a rule's effects land in `World`
-/// before the next event is looked at, so a follow-up event is queued by the
-/// caller and handled in turn.
-#[test]
-fn caller_side_queue_processes_events_in_order() {
+fn a_declining_guard_is_not_a_missing_row() {
+    let mut m = off();
     let mut w = World::default();
-    let queue = [Event::GearChanged(Gear::Reverse), Event::GearChanged(Gear::Drive)];
 
-    for ev in &queue {
-        Camera.dispatch(ev, &mut w);
-    }
-
-    assert_eq!(
-        w.performed,
-        vec![Action::ShowCamera, Action::HideCamera],
-        "each event was handled to completion before the next"
+    // Drive, so `GearIsReverse` is false and `CAM_ON` declines.
+    assert!(machine::dispatch(&mut m, &Event::GearChanged(Gear::Drive), &mut w).is_none());
+    assert_eq!(m.tag(), Tag::Off);
+    // Rows do cover the combination, which is what separates this from a hole.
+    assert!(
+        verify::coverage::<RearCam>(Tag::Off, EDGES, IGNORES)
+            .holes
+            .is_empty()
     );
-    assert!(!w.camera_visible);
 }

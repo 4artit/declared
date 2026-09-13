@@ -2,27 +2,27 @@
 //!
 //!     cargo run --example door_lock
 //!
-//! The lock is the least favourable thing to write as a rule table. It is
-//! genuinely state-shaped — four named configurations, and most of what it does
-//! is move between them — so it is the case where naming the state as a field
-//! of `World` and testing it with a guard has the most to prove.
+//! Four states (Locked/Unlocked/Alarm/Maintenance) and seven edges.
 //!
-//! What that costs is visible in the table. Three rules end with the door
-//! locked, so all three repeat `Lock, ResetAttempts`; a transition table
-//! declares that pair once, as `Locked`'s entry. What it buys is that every
-//! effect of an event is on the line that caused it, and there is one kind of
-//! row rather than two.
+//! # Which vocabulary an effect belongs to
 //!
-//! # Which effects an action covers
-//!
-//! Everything mutable lives in `World`, and every write to it is an action —
-//! including the lock's own position. `Action::Lock` both locks the door and
-//! records that it is locked, because those are one thing said twice.
+//! Everything mutable lives in `World`, and every write to it is an action. Where
+//! the value comes from decides which kind: `attempts` comes from the state, so
+//! `ResetAttempts` is a `StateAction` on `Locked`'s entry; `unlock_code` comes
+//! from the event, so `Unlock` is an `Action` on the `UNLOCK` edge and only the
+//! clearing is left to `Unlocked`'s exit.
 
 use declared::prelude::*;
-use declared::{Domain, Enumerable, render, verify};
+use declared::{machine, render, verify};
 
-use declared::feature::AnyFeature;
+declared::tags! {
+    enum Tag {
+        Locked,
+        Unlocked,
+        Alarm,
+        Maintenance,
+    }
+}
 
 // Event, Kind, HasKind and the coverage value list all come from this one
 // declaration.
@@ -36,23 +36,17 @@ declared::events! {
     }
 }
 
-/// Where the lock is. A plain field of [`World`]: the guards below read it and
-/// the actions write it, like everything else the controller keeps.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-enum Lock {
-    Locked,
-    Unlocked,
-    Alarm,
-    Maintenance,
-}
-
-/// Everything the lock does. One vocabulary, not two — a rule emits the effects
-/// of the event it matched, whether or not one of them moves the lock.
+/// Effects produced in reaction to an event. Only these can read `ev`.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 enum Action {
     Unlock,
     Beep,
     IncrementAttempts,
+}
+
+/// Effects of being in a state, run whichever edge led there.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+enum StateAction {
     ClearUnlockCode,
     Lock,
     ResetAttempts,
@@ -61,29 +55,13 @@ enum Action {
     MaintenanceOff,
 }
 
-// Only needed by `verify::unemitted_actions`; `Feature` does not require it.
-impl Enumerable for Action {
-    const ALL: &'static [Self] = &[
-        Self::Unlock,
-        Self::Beep,
-        Self::IncrementAttempts,
-        Self::ClearUnlockCode,
-        Self::Lock,
-        Self::ResetAttempts,
-        Self::SoundAlarm,
-        Self::MaintenanceOn,
-        Self::MaintenanceOff,
-    ];
-}
-
 /// The outside world.
 struct World {
-    lock: Lock,
     correct_code: u32,
     attempts: u32,
     max_attempts: u32,
-    /// Set by `UNLOCK` and cleared by `RELOCK`, so it is only meaningful while
-    /// the door is unlocked.
+    /// Set by the `UNLOCK` edge and cleared by `Unlocked`'s exit action, so it is
+    /// only meaningful while the door is unlocked.
     unlock_code: u32,
 }
 
@@ -98,6 +76,58 @@ impl Domain for Door {
     // events!.
 }
 
+impl MachineSpec for Door {
+    const NAME: &'static str = "Door";
+
+    type Domain = Door;
+    type Tag = Tag;
+    type Action = Action;
+    type StateAction = StateAction;
+
+    const STATES: &'static [State<Door>] = STATES;
+    const EDGES: &'static [Edge<Door>] = EDGES;
+    const IGNORES: &'static [Ignore<Door>] = IGNORES;
+
+    // This controller is one machine, so it owns every effect in it.
+
+    fn perform(action: Action, ev: &Event, world: &mut World) {
+        match action {
+            Action::Unlock => {
+                if let Event::EnterCode(code) = ev {
+                    world.unlock_code = *code;
+                }
+                println!("  [action] unlock (code {})", world.unlock_code);
+            }
+            Action::Beep => println!("  [action] beep (wrong code)"),
+            Action::IncrementAttempts => {
+                world.attempts += 1;
+                println!("  [action] attempts = {}", world.attempts);
+            }
+        }
+    }
+
+    fn perform_state(action: StateAction, world: &mut World) {
+        match action {
+            StateAction::ClearUnlockCode => world.unlock_code = 0,
+            StateAction::Lock => println!("  [action] lock"),
+            StateAction::ResetAttempts => {
+                world.attempts = 0;
+                println!("  [action] attempts reset");
+            }
+            StateAction::SoundAlarm => println!("  [action] alarm on"),
+            StateAction::MaintenanceOn => println!("  [action] maintenance mode on"),
+            StateAction::MaintenanceOff => println!("  [action] maintenance mode off"),
+        }
+    }
+
+    // all_tags uses its default, which reads the Enumerable impl generated by
+    // tags!.
+}
+
+/// A machine resumes rather than starts, so the state it resumes in stays a
+/// runtime choice and is not a const on the spec.
+const INITIAL: Tag = Tag::Locked;
+
 declared::cond_node!(Door, CodeCorrect, |cx| match cx.event {
     Event::EnterCode(code) => Cond::from(*code == cx.world.correct_code),
     _ => Cond::False,
@@ -107,133 +137,132 @@ declared::cond_node!(Door, AttemptsExceeded, |cx| Cond::from(
     cx.world.attempts >= cx.world.max_attempts
 ));
 
-// Where the lock is, as a condition. What a transition table writes as an
-// edge's `from` column.
-declared::cond_node!(Door, IsLocked, |cx| Cond::from(cx.world.lock == Lock::Locked));
-declared::cond_node!(Door, IsUnlocked, |cx| Cond::from(
-    cx.world.lock == Lock::Unlocked
-));
-declared::cond_node!(Door, IsAlarm, |cx| Cond::from(cx.world.lock == Lock::Alarm));
-declared::cond_node!(Door, IsMaintenance, |cx| Cond::from(
-    cx.world.lock == Lock::Maintenance
-));
+// `Unlock` reads the payload out of `ev`, so it sits on the `UNLOCK` edge;
+// `ClearUnlockCode` needs no event and drops the code again on the way out.
+static STATES: &[State<Door>] = &[
+    State {
+        tag: Tag::Locked,
+        entry: &[StateAction::Lock, StateAction::ResetAttempts],
+        exit: &[],
+    },
+    State {
+        tag: Tag::Unlocked,
+        entry: &[],
+        exit: &[StateAction::ClearUnlockCode],
+    },
+    State {
+        tag: Tag::Alarm,
+        entry: &[StateAction::SoundAlarm],
+        exit: &[],
+    },
+    State {
+        tag: Tag::Maintenance,
+        entry: &[StateAction::MaintenanceOn],
+        exit: &[StateAction::MaintenanceOff],
+    },
+];
 
-impl Feature for Door {
-    type Domain = Door;
-    type Action = Action;
+static EDGES: &[Edge<Door>] = &[
+    Edge {
+        id: "UNLOCK",
+        from: Source::These(&[Tag::Locked]),
+        when: Kind::EnterCode,
+        check: declared::check!(CodeCorrect),
+        unknown: OnUnknown::Deny,
+        // Reads the digits out of `EnterCode`, so it belongs to this edge.
+        emit: &[Action::Unlock],
+        goto: Goto::To(Tag::Unlocked),
+    },
+    Edge {
+        id: "WRONG_CODE",
+        from: Source::These(&[Tag::Locked]),
+        when: Kind::EnterCode,
+        check: declared::check!(!CodeCorrect && !AttemptsExceeded),
+        unknown: OnUnknown::Deny,
+        emit: &[Action::Beep, Action::IncrementAttempts],
+        goto: Goto::Internal,
+    },
+    Edge {
+        id: "TRIGGER_ALARM",
+        from: Source::These(&[Tag::Locked]),
+        when: Kind::EnterCode,
+        check: declared::check!(!CodeCorrect && AttemptsExceeded),
+        unknown: OnUnknown::Deny,
+        emit: &[],
+        goto: Goto::To(Tag::Alarm),
+    },
+    Edge {
+        id: "RELOCK",
+        from: Source::These(&[Tag::Unlocked]),
+        when: Kind::Timeout,
+        check: declared::check!(),
+        unknown: OnUnknown::Deny,
+        emit: &[],
+        goto: Goto::To(Tag::Locked),
+    },
+    Edge {
+        id: "ALARM_RESET",
+        from: Source::These(&[Tag::Alarm]),
+        when: Kind::Reset,
+        check: declared::check!(),
+        unknown: OnUnknown::Deny,
+        emit: &[],
+        goto: Goto::To(Tag::Locked),
+    },
+    Edge {
+        id: "ENTER_MAINTENANCE",
+        from: Source::These(&[Tag::Locked]),
+        when: Kind::MaintenanceToggle,
+        check: declared::check!(),
+        unknown: OnUnknown::Deny,
+        emit: &[],
+        goto: Goto::To(Tag::Maintenance),
+    },
+    Edge {
+        id: "EXIT_MAINTENANCE",
+        from: Source::These(&[Tag::Maintenance]),
+        when: Kind::MaintenanceToggle,
+        check: declared::check!(),
+        unknown: OnUnknown::Deny,
+        emit: &[],
+        goto: Goto::To(Tag::Locked),
+    },
+];
 
-    const NAME: &'static str = "Door";
-
-    const RULES: &'static [Rule<Door, Action>] = &[
-        Rule {
-            id: "UNLOCK",
-            when: &[Kind::EnterCode],
-            check: declared::check!(IsLocked && CodeCorrect),
-            unknown: OnUnknown::Deny,
-            emit: &[Action::Unlock],
-        },
-        Rule {
-            id: "WRONG_CODE",
-            when: &[Kind::EnterCode],
-            check: declared::check!(IsLocked && !CodeCorrect && !AttemptsExceeded),
-            unknown: OnUnknown::Deny,
-            emit: &[Action::Beep, Action::IncrementAttempts],
-        },
-        Rule {
-            id: "TRIGGER_ALARM",
-            when: &[Kind::EnterCode],
-            check: declared::check!(IsLocked && !CodeCorrect && AttemptsExceeded),
-            unknown: OnUnknown::Deny,
-            emit: &[Action::SoundAlarm],
-        },
-        // The three rules that end with the door locked. `Lock, ResetAttempts`
-        // on each of them is what a `State::entry` says once — the repetition
-        // is the price of having no state table, and the reason each line is
-        // readable on its own is the same fact.
-        Rule {
-            id: "RELOCK",
-            when: &[Kind::Timeout],
-            check: declared::check!(IsUnlocked),
-            unknown: OnUnknown::Deny,
-            emit: &[Action::ClearUnlockCode, Action::Lock, Action::ResetAttempts],
-        },
-        Rule {
-            id: "ALARM_RESET",
-            when: &[Kind::Reset],
-            check: declared::check!(IsAlarm),
-            unknown: OnUnknown::Deny,
-            emit: &[Action::Lock, Action::ResetAttempts],
-        },
-        Rule {
-            id: "ENTER_MAINTENANCE",
-            when: &[Kind::MaintenanceToggle],
-            check: declared::check!(IsLocked),
-            unknown: OnUnknown::Deny,
-            emit: &[Action::MaintenanceOn],
-        },
-        Rule {
-            id: "EXIT_MAINTENANCE",
-            when: &[Kind::MaintenanceToggle],
-            check: declared::check!(IsMaintenance),
-            unknown: OnUnknown::Deny,
-            emit: &[
-                Action::MaintenanceOff,
-                Action::Lock,
-                Action::ResetAttempts,
-            ],
-        },
-    ];
-
-    fn perform(action: Action, ev: &Event, world: &mut World) {
-        match action {
-            Action::Unlock => {
-                if let Event::EnterCode(code) = ev {
-                    world.unlock_code = *code;
-                }
-                world.lock = Lock::Unlocked;
-                println!("  [action] unlock (code {})", world.unlock_code);
-            }
-            Action::Beep => println!("  [action] beep (wrong code)"),
-            Action::IncrementAttempts => {
-                world.attempts += 1;
-                println!("  [action] attempts = {}", world.attempts);
-            }
-            Action::ClearUnlockCode => world.unlock_code = 0,
-            Action::Lock => {
-                world.lock = Lock::Locked;
-                println!("  [action] lock");
-            }
-            Action::ResetAttempts => {
-                world.attempts = 0;
-                println!("  [action] attempts reset");
-            }
-            Action::SoundAlarm => {
-                world.lock = Lock::Alarm;
-                println!("  [action] alarm on");
-            }
-            Action::MaintenanceOn => {
-                world.lock = Lock::Maintenance;
-                println!("  [action] maintenance mode on");
-            }
-            Action::MaintenanceOff => println!("  [action] maintenance mode off"),
-        }
-    }
-}
-
-/// The router walks this, so what the document draws is what runs.
-const FEATURES: &[&dyn AnyFeature<Door>] = &[&Door];
+static IGNORES: &[Ignore<Door>] = &[
+    Ignore {
+        from: Source::These(&[Tag::Locked, Tag::Alarm, Tag::Maintenance]),
+        when: &[Kind::Timeout],
+        why: "the timeout only drives the automatic relock from Unlocked",
+    },
+    Ignore {
+        from: Source::AnyExcept(&[Tag::Alarm]),
+        when: &[Kind::Reset],
+        why: "Reset clears the alarm, so it is only meaningful in Alarm",
+    },
+    Ignore {
+        from: Source::These(&[Tag::Unlocked, Tag::Alarm, Tag::Maintenance]),
+        when: &[Kind::EnterCode],
+        why: "a code is entered to unlock, so it is only accepted in Locked",
+    },
+    Ignore {
+        from: Source::These(&[Tag::Unlocked, Tag::Alarm]),
+        when: &[Kind::MaintenanceToggle],
+        why: "maintenance is toggled only between Locked and Maintenance",
+    },
+];
 
 fn main() {
-    // The lock is resumed rather than started: this stands in for what a real
-    // controller would read back from the hardware, so no rule runs to put it
-    // here and `Lock`'s effects do not fire.
     let mut world = World {
-        lock: Lock::Locked,
         correct_code: 1234,
         attempts: 0,
         max_attempts: 2,
         unlock_code: 0,
     };
+    // A machine resumes: this tag stands in for what a real controller would
+    // read back from the lock, and `Locked`'s entry does not run here.
+    // The table now comes from the spec, so the spec is what names the machine.
+    let mut m = Machine::<Door>::new(INITIAL);
 
     let steps: &[(&str, Event)] = &[
         ("wrong code, 1st", Event::EnterCode(9999)),
@@ -244,92 +273,32 @@ fn main() {
         ("timeout -> relock", Event::Timeout),
         ("enter maintenance", Event::MaintenanceToggle),
         ("leave maintenance", Event::MaintenanceToggle),
-        // ResetAttempts ran on the way back to Locked, so this counts from 1.
+        // ResetAttempts ran on entry to Locked, so this counts from 1 again.
         ("wrong code (counter was cleared)", Event::EnterCode(6666)),
     ];
 
-    println!("lock = {:?}", world.lock);
+    println!("state = {:?}", m.tag());
     for (desc, ev) in steps {
         println!("dispatch: {desc} ({ev:?})");
-        match Door.dispatch(ev, &mut world) {
-            Some(id) => println!("  rule = {id}, lock = {:?}", world.lock),
-            None => println!("  (no rule matched)"),
+        if let Some(taken) = machine::dispatch(&mut m, ev, &mut world) {
+            println!("  edge = {}, state = {:?}", taken.edge, m.tag());
+        } else {
+            println!("  (ignored)");
         }
     }
 
+    let diagram = render::state_diagram::<Door>(INITIAL, EDGES, STATES);
+    let md = format!("# Door lock FSM\n\n```mermaid\n{diagram}```\n");
     golden(
         "examples/door_lock/door_lock.md",
         include_str!("door_lock.md"),
-        &document(),
+        &md,
     );
-}
 
-/// The lock, drawn from its declaration.
-fn document() -> String {
-    let unhandled = verify::unhandled_kinds(FEATURES);
-    assert!(unhandled.is_empty(), "events nothing handles: {unhandled:?}");
-
-    let dup = verify::duplicate_node_names(FEATURES);
-    assert!(dup.is_empty(), "guard names used by two node types: {dup:?}");
-
-    let dup_ids = verify::duplicate_rule_ids(FEATURES);
-    assert!(dup_ids.is_empty(), "rule ids used twice: {dup_ids:?}");
-
-    let dead = verify::unemitted_actions::<Door>();
-    assert!(dead.is_empty(), "declared but never emitted: {dead:?}");
-
-    format!(
-        "\
-# Door lock
-
-A four-digit lock, written as one rule table. Generated from the declaration —
-regenerate with `cargo run --example door_lock -- --write`.
-
-## Rules
-
-Where the lock is, is a condition like any other: `IsLocked` and its three
-siblings read one field of the world, and the actions that move the lock write
-it. So a row carries every effect of the event it matched, including the one a
-transition table would have hidden in a state's entry list.
-
-That is also what the repetition below is. `RELOCK`, `ALARM_RESET` and
-`EXIT_MAINTENANCE` all end with the door locked, so all three say
-`Lock, ResetAttempts`.
-
-{rules}
-## By event
-
-{by_event}
-## Checks
-
-| Check | Result |
-|---|---|
-| Events nothing handles | {unhandled:?} |
-| Guard names used by two node types | {dup:?} |
-| Rule ids used twice | {dup_ids:?} |
-| Actions never emitted | {dead:?} |
-",
-        rules = render::rule_table(FEATURES),
-        by_event = by_event(),
-        unhandled = unhandled,
-        dup = dup,
-        dup_ids = dup_ids,
-        dead = dead,
-    )
-}
-
-/// One section per event kind, in `events!` declaration order.
-fn by_event() -> String {
-    let mut s = String::new();
-    for &kind in Door::all_kinds() {
-        s.push_str(&format!("### {kind:?}\n\n"));
-        s.push_str(&render::event_table(FEATURES, kind));
-        s.push_str(&format!(
-            "\n```mermaid\n{}```\n\n",
-            render::event_flowchart(FEATURES, kind)
-        ));
-    }
-    s
+    // A defect fails the run rather than scrolling past in the output.
+    let coverage = verify::coverage::<Door>(INITIAL, EDGES, IGNORES);
+    assert!(coverage.is_clean(), "{coverage:?}");
+    println!("coverage: clean");
 }
 
 /// The committed `.md` is the golden: a normal run checks the generated

@@ -31,18 +31,20 @@ fallback.
 | `Fold` | `UNFOLD_ON_POWER_ON` | `PowerChanged` | `PowerOn && AtFolded` | `Unfold` |
 | `Fold` | `UNFOLD_ON_SPEED` | `SpeedChanged` | `SpeedForcesUnfold && AtFolded` | `Unfold` |
 
-## By event
+## By feature
 
-One signal at a time, which is the shape a requirement is written in. A rule
-covering several kinds appears under each of them; the `when` column is what
-says so.
+Each feature, split by the set of events its rules react to. Rules triggered by
+the same combination share a table and a diagram, so what a feature does on
+each trigger reads in one place.
 
-### DefogChanged
+### Heating
 
-| feature | rule | when | guard | emits |
-|---|---|---|---|---|
-| `Heating` | `HEAT_ON` | `DefogChanged` | `DefogOn` | `On` |
-| `Heating` | `HEAT_OFF` | `DefogChanged` | else | `Off` |
+#### When `DefogChanged`
+
+| rule | guard | emits |
+|---|---|---|
+| `HEAT_ON` | `DefogOn` | `On` |
+| `HEAT_OFF` | else | `Off` |
 
 ```mermaid
 flowchart LR
@@ -51,58 +53,50 @@ flowchart LR
     ft_Heating["Heating"] -->|"HEAT_OFF<br/>else"| ac_Heating_Off["Off"]
 ```
 
-### PowerChanged
+### Dimming
 
-| feature | rule | when | guard | emits |
-|---|---|---|---|---|
-| `Dimming` | `DIM_ON` | `PowerChanged`, `GearChanged` | `PowerOn && !GearReverse` | `On` |
-| `Dimming` | `DIM_OFF` | `PowerChanged`, `GearChanged` | else | `Off` |
-| `Fold` | `FOLD_ON_POWER_OFF` | `PowerChanged` | `PowerOff && SpeedAllowsFold && AtUnfolded` | `Fold` |
-| `Fold` | `UNFOLD_ON_POWER_ON` | `PowerChanged` | `PowerOn && AtFolded` | `Unfold` |
+#### When `PowerChanged`, `GearChanged`
+
+| rule | guard | emits |
+|---|---|---|
+| `DIM_ON` | `PowerOn && !GearReverse` | `On` |
+| `DIM_OFF` | else | `Off` |
 
 ```mermaid
 flowchart LR
     ev_PowerChanged["PowerChanged"] --> ft_Dimming["Dimming"]
-    ft_Dimming["Dimming"] -->|"DIM_ON<br/>PowerOn && !GearReverse"| ac_Dimming_On["On"]
-    ft_Dimming["Dimming"] -->|"DIM_OFF<br/>else"| ac_Dimming_Off["Off"]
-    ev_PowerChanged["PowerChanged"] --> ft_Fold["Fold"]
-    ft_Fold["Fold"] -->|"FOLD_ON_POWER_OFF<br/>PowerOff && SpeedAllowsFold && AtUnfolded"| ac_Fold_Fold["Fold"]
-    ft_Fold["Fold"] -->|"UNFOLD_ON_POWER_ON<br/>PowerOn && AtFolded"| ac_Fold_Unfold["Unfold"]
-```
-
-### GearChanged
-
-| feature | rule | when | guard | emits |
-|---|---|---|---|---|
-| `Dimming` | `DIM_ON` | `PowerChanged`, `GearChanged` | `PowerOn && !GearReverse` | `On` |
-| `Dimming` | `DIM_OFF` | `PowerChanged`, `GearChanged` | else | `Off` |
-
-```mermaid
-flowchart LR
     ev_GearChanged["GearChanged"] --> ft_Dimming["Dimming"]
     ft_Dimming["Dimming"] -->|"DIM_ON<br/>PowerOn && !GearReverse"| ac_Dimming_On["On"]
     ft_Dimming["Dimming"] -->|"DIM_OFF<br/>else"| ac_Dimming_Off["Off"]
 ```
 
-### SpeedChanged
+### Fold
 
-| feature | rule | when | guard | emits |
-|---|---|---|---|---|
-| `Fold` | `UNFOLD_ON_SPEED` | `SpeedChanged` | `SpeedForcesUnfold && AtFolded` | `Unfold` |
+#### When `PowerChanged`
+
+| rule | guard | emits |
+|---|---|---|
+| `FOLD_ON_POWER_OFF` | `PowerOff && SpeedAllowsFold && AtUnfolded` | `Fold` |
+| `UNFOLD_ON_POWER_ON` | `PowerOn && AtFolded` | `Unfold` |
+
+```mermaid
+flowchart LR
+    ev_PowerChanged["PowerChanged"] --> ft_Fold["Fold"]
+    ft_Fold["Fold"] -->|"FOLD_ON_POWER_OFF<br/>PowerOff && SpeedAllowsFold && AtUnfolded"| ac_Fold_Fold["Fold"]
+    ft_Fold["Fold"] -->|"UNFOLD_ON_POWER_ON<br/>PowerOn && AtFolded"| ac_Fold_Unfold["Unfold"]
+```
+
+#### When `SpeedChanged`
+
+| rule | guard | emits |
+|---|---|---|
+| `UNFOLD_ON_SPEED` | `SpeedForcesUnfold && AtFolded` | `Unfold` |
 
 ```mermaid
 flowchart LR
     ev_SpeedChanged["SpeedChanged"] --> ft_Fold["Fold"]
     ft_Fold["Fold"] -->|"UNFOLD_ON_SPEED<br/>SpeedForcesUnfold && AtFolded"| ac_Fold_Unfold["Unfold"]
 ```
-
-### FoldPositionChanged
-
-Nothing reacts to this event.
-
-### UserChanged
-
-Nothing reacts to this event.
 
 
 ## Checks

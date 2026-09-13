@@ -1,0 +1,88 @@
+//! One row of the transition table.
+
+use alloc::vec::Vec;
+
+use crate::guard::{Expr, OnUnknown};
+use crate::{ActionOf, Enumerable, KindOf, MachineSpec};
+
+/// The set of states an edge departs from — a state list, not a guard
+/// condition.
+pub enum Source<M: MachineSpec> {
+    These(&'static [M::Tag]),
+    /// Every state except the listed ones.
+    AnyExcept(&'static [M::Tag]),
+    Any,
+}
+
+impl<M: MachineSpec> Source<M> {
+    /// Reports whether `tag` is in this source's state set.
+    pub fn matches(&self, tag: M::Tag) -> bool {
+        match self {
+            Self::These(list) => list.contains(&tag),
+            Self::AnyExcept(list) => !list.contains(&tag),
+            Self::Any => true,
+        }
+    }
+
+    /// Expands this source into its concrete list of states, for diagrams and
+    /// coverage checking. Walks every value of `M::Tag`, so it agrees with
+    /// [`Source::matches`] even where [`MachineSpec::all_tags`] is narrowed.
+    pub fn expand(&self) -> Vec<M::Tag> {
+        <M::Tag as Enumerable>::ALL
+            .iter()
+            .copied()
+            .filter(|t| self.matches(*t))
+            .collect()
+    }
+}
+
+/// The target of a transition.
+pub enum Goto<M: MachineSpec> {
+    To(M::Tag),
+    /// Stay in the current state. [`super::State::exit`] and
+    /// [`super::State::entry`] do **not** run.
+    Internal,
+}
+
+/// A single transition.
+///
+/// When several edges match the same `(state, event kind)`, **declaration order
+/// is priority**.
+pub struct Edge<M: MachineSpec> {
+    /// Stable identifier, for requirement tracing and golden diffs. It must
+    /// survive reordering of the table.
+    pub id: &'static str,
+    pub from: Source<M>,
+    pub when: KindOf<M::Domain>,
+    pub check: &'static Expr<M::Domain>,
+    pub unknown: OnUnknown,
+    /// Actions this transition emits, in declaration order. Named like
+    /// [`crate::feature::Rule::emit`]: both layers declare effects the same way.
+    pub emit: &'static [ActionOf<M>],
+    pub goto: Goto<M>,
+}
+
+/// A `(state, event kind)` combination that is deliberately not handled.
+///
+/// Declaring these lets coverage checking tell a gap apart from an
+/// intentional omission, so `why` is required.
+///
+/// A combination declared here must carry no [`Edge`] at all, guards included.
+/// [`crate::verify::coverage`] reports one that does in
+/// [`crate::verify::Coverage::ignored_but_handled`].
+pub struct Ignore<M: MachineSpec> {
+    pub from: Source<M>,
+    /// The kinds this covers. A list, unlike [`Edge::when`]: an edge is singular
+    /// because its [`Edge::id`] names one transition, while one `why` justifies
+    /// as many combinations as it applies to.
+    pub when: &'static [KindOf<M::Domain>],
+    /// Why this combination is intentionally unhandled.
+    pub why: &'static str,
+}
+
+impl<M: MachineSpec> Ignore<M> {
+    /// Reports whether this `Ignore` covers `(tag, kind)`.
+    pub fn matches(&self, tag: M::Tag, kind: KindOf<M::Domain>) -> bool {
+        self.from.matches(tag) && self.when.contains(&kind)
+    }
+}

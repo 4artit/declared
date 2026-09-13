@@ -2,7 +2,7 @@
 
 A declarative controller framework for Rust. You describe what a controller
 reacts to and what it does about it as static data, and that one declaration
-drives the runtime, the diagrams and the reports.
+drives the runtime, the diagram, and the gap check.
 
 [한국어 문서](README_KR.md) · [개발자 문서 (한국어)](docs/README.md)
 
@@ -12,48 +12,52 @@ Spread controller logic across `match` arms and "what happens when this event
 arrives" can only be answered by reading the whole file. Meanwhile the diagram
 someone drew for it slowly stops matching reality.
 
-`declared` makes the table the source. The diagrams and the checks are generated
+`declared` makes the table the source. The diagram and the checks are generated
 from the exact data the executor runs, so there is no second copy to keep in
 sync.
 
 ```mermaid
 flowchart LR
-    D["declaration<br/>RULES"]
-    D --> R["run<br/>AnyFeature::dispatch"]
-    D --> G["document<br/>render::event_table · event_flowchart"]
-    D --> V["reports<br/>verify::*"]
+    D["declaration<br/>STATES · EDGES · RULES"]
+    D --> R["run<br/>machine::dispatch"]
+    D --> G["diagram<br/>render::state_diagram"]
+    D --> V["gap check<br/>verify::coverage"]
 ```
 
-### One kind of table
+### Two layers
 
-A controller is a list of features, and a feature is a list of rules: the event
-kinds it is considered for, the condition that has to hold, and what it emits.
-That is the whole model.
+Two layers share one vocabulary (`Domain`); take whichever a controller needs.
 
-A controller that keeps state keeps it in its `World`, where a guard reads it
-and an action writes it — like everything else it keeps. There is no second
-layer for it, and no second kind of row. A declaration file imports one line:
-`use declared::prelude::*;`.
+- **`feature`** — when behavior does not depend on history. Declare the events it takes and the actions it emits.
+- **`machine`** — when the same event means different things in different states. Declare a transition table.
+
+Because they share a `Domain`, a stateless feature that later needs history
+keeps its declaration and gains a `MachineSpec` beside it. A declaration file
+imports one line: `use declared::prelude::*;`.
 
 ## Quick start
 
 A two-state light switch:
 
 ```rust
-use declared::feature::AnyFeature;
+use declared::machine;
 use declared::prelude::*;
 
+declared::tags! { enum Tag { Off, On } }
 declared::events! {
     #[derive(Clone, Debug)]
     enum Event => Kind { Toggle }
 }
 
+/// Reactions to an event. Only these are handed the event.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
-enum Action { TurnOn, TurnOff }
+enum Action { Click }
 
-#[derive(Default)]
-struct World { lit: bool }
+/// Effects of being in a state, run whichever edge led there.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+enum StateAction { TurnOn, TurnOff }
 
+struct World;
 struct Light;
 
 impl Domain for Light {
@@ -62,81 +66,92 @@ impl Domain for Light {
     type World = World;
 }
 
-declared::cond_node!(Light, IsLit, |cx| Cond::from(cx.world.lit));
-
-impl Feature for Light {
-    type Domain = Light;
-    type Action = Action;
-
+impl MachineSpec for Light {
     const NAME: &'static str = "Light";
 
-    const RULES: &'static [Rule<Light, Action>] = &[
-        Rule { id: "TURN_OFF", when: &[Kind::Toggle],
-               check: declared::check!(IsLit), unknown: OnUnknown::Deny,
-               emit: &[Action::TurnOff] },
-        // No guard: the fallback, reached only when the row above did not match.
-        Rule { id: "TURN_ON", when: &[Kind::Toggle],
-               check: declared::check!(), unknown: OnUnknown::Deny,
-               emit: &[Action::TurnOn] },
-    ];
+    type Domain = Light;
+    type Tag = Tag;
+    type Action = Action;
+    type StateAction = StateAction;
 
-    fn perform(action: Action, _ev: &Event, world: &mut World) {
+    const STATES: &'static [State<Light>] = STATES;
+    const EDGES: &'static [Edge<Light>] = EDGES;
+    const IGNORES: &'static [Ignore<Light>] = IGNORES;
+
+    fn perform(action: Action, _ev: &Event, _world: &mut World) {
         match action {
-            Action::TurnOn => { world.lit = true; println!("on") }
-            Action::TurnOff => { world.lit = false; println!("off") }
+            Action::Click => println!("click"),
+        }
+    }
+
+    fn perform_state(action: StateAction, _world: &mut World) {
+        match action {
+            StateAction::TurnOn => println!("on"),
+            StateAction::TurnOff => println!("off"),
         }
     }
 }
 
+static STATES: &[State<Light>] = &[
+    State { tag: Tag::Off, entry: &[StateAction::TurnOff], exit: &[] },
+    State { tag: Tag::On,  entry: &[StateAction::TurnOn],  exit: &[] },
+];
+
+static EDGES: &[Edge<Light>] = &[
+    Edge { id: "TURN_ON",  from: Source::These(&[Tag::Off]), when: Kind::Toggle,
+           check: declared::check!(), unknown: OnUnknown::Deny,
+           emit: &[Action::Click], goto: Goto::To(Tag::On) },
+    Edge { id: "TURN_OFF", from: Source::These(&[Tag::On]),  when: Kind::Toggle,
+           check: declared::check!(), unknown: OnUnknown::Deny,
+           emit: &[Action::Click], goto: Goto::To(Tag::Off) },
+];
+
+static IGNORES: &[Ignore<Light>] = &[];
+
 fn main() {
-    let mut world = World::default();
-    Light.dispatch(&Event::Toggle, &mut world); // -> on
-    Light.dispatch(&Event::Toggle, &mut world); // -> off
+    let mut world = World;
+    // A machine resumes rather than starts: `Tag::Off` says the lamp is
+    // already off, so `Off`'s entry action does not run here.
+    let mut m = Machine::<Light>::new(Tag::Off);
+    machine::dispatch(&mut m, &Event::Toggle, &mut world); // -> click, on
+    machine::dispatch(&mut m, &Event::Toggle, &mut world); // -> click, off
 }
 ```
 
 Bigger examples:
 
-- [`examples/door_lock`](examples/door_lock/main.rs) — a four-position lock, the case where naming the position as a field of `World` has the most to prove
-- [`examples/mirrors`](examples/mirrors/main.rs) — three features over one domain, and a signal the controller keeps without deciding on
+- [`examples/door_lock`](examples/door_lock/main.rs) — four states, guard conditions, `Ignore` with wildcard sources
+- [`examples/mirrors`](examples/mirrors/main.rs) — a controller built from features only: heating, dimming and folding
 
 ## What it buys you
 
 - **The table is the running code**
-  - `AnyFeature::dispatch` reads the table you wrote.
+  - `machine::dispatch` and `feature::dispatch` read the table you wrote.
   - There is no separate interpretation step to fall out of sync with it.
 
-- **The document is written per signal**
-  - `render::event_table` and `event_flowchart` take one event kind and gather every rule that reacts to it, across features.
-  - A requirement reads "on X, if C, do A", so a section of it and one of these tables sit side by side.
-  - Every arrow carries its rule's id and then its guard — the name states the intent, the guard states what it decides by, and a review is mostly checking that those agree.
+- **A forgotten case fails CI, not production**
+  - `verify::coverage` walks every `(state × event)` pair and reports the ones with no edge and no `Ignore`.
+  - Assert `is_clean()` in a test and the gap stops the build.
 
 - **One definition per condition**
   - A guard is declared against the `Domain`, so "power is on" is one node the whole controller shares.
-  - Node names are unique per domain, and `verify::duplicate_node_names` checks it across every feature at once.
+  - Node names are unique per domain, and `verify::duplicate_node_names` checks it across features and machines together.
 
 - **Undecidable is not hidden**
   - Conditions evaluate to `True`/`False`/`Unknown` rather than `bool`.
-  - The fail-open or fail-closed policy is named by `Rule::unknown` and shows up in the table instead of inside a guard function.
+  - The fail-open or fail-closed policy is named by `Edge::unknown` and shows up on the diagram instead of inside a guard function.
 
 - **Effects are traceable**
   - `perform` is the only place the outside world is touched, so every effect a dispatch produced is a plain value you can log or assert on.
-  - Every row carries an id, and `dispatch` returns the one that ran.
+  - Every row carries an id (`Edge::id`, `Rule::id`), and both layers' `dispatch` returns the one that ran.
 
 - **Effects belong to whoever emits them**
-  - Each feature names its own action type, so every `perform` is exhaustive over exactly the effects its own file declares. Adding one is a compile error there and nowhere else.
+  - Each feature and each machine names its own action type, so every `perform` is exhaustive over exactly the effects its own file declares. Adding one is a compile error there and nowhere else.
+  - Entry and exit run whichever edge led there, so they use a separate vocabulary, `StateAction`, and `perform_state` gets no event. An effect that needs one goes on an edge.
 
 - **It is `no_std`**
   - Runs on `core` alone; dispatch and guard evaluation touch no heap.
   - `alloc` is needed only by `render` and `verify` — what reports on a controller rather than runs it.
-
-## What it does not check
-
-A rule table decides by conditions, and nothing here asks whether the rules on
-one event cover every combination of them, or whether a rule is completely
-shadowed by one above it. `Expr` stays a tree of named nodes, so it is
-answerable; it is not answered yet. See
-[docs/4](docs/4-verification.md#검사가-잡지-못하는-것).
 
 ## Tests
 
