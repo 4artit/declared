@@ -1,4 +1,4 @@
-# Door lock FSM
+# Door
 
 ## Transitions
 
@@ -19,16 +19,11 @@ stateDiagram-v2
 
 ## In-place transitions
 
-Edges that stay in their state. They run their actions but move nothing, so the
-diagram above does not draw them.
-
 | state | event | guard | actions | edge id |
 |---|---|---|---|---|
 | `Locked` | `EnterCode` | `!CodeCorrect && !AttemptsExceeded` | Beep, IncrementAttempts | `WRONG_CODE` |
 
 ## Deliberately unhandled
-
-Combinations no edge covers on purpose, each with its reason.
 
 | state | event | reason |
 |---|---|---|
@@ -43,3 +38,14 @@ Combinations no edge covers on purpose, each with its reason.
 | `Maintenance` | `EnterCode` | a code is entered to unlock, so it is only accepted in Locked |
 | `Unlocked` | `MaintenanceToggle` | maintenance is toggled only between Locked and Maintenance |
 | `Alarm` | `MaintenanceToggle` | maintenance is toggled only between Locked and Maintenance |
+
+## Checks
+
+| Check | Result |
+|---|---|
+| Uncovered combinations | [] |
+| Ignored but handled | [] |
+| Unreachable states | [] |
+| Guard names used by two node types | [] |
+| Edge ids used twice | [] |
+| Overlapping edges | [("Locked", "EnterCode", ["UNLOCK", "WRONG_CODE", "TRIGGER_ALARM"])] |

@@ -25,6 +25,7 @@ flowchart TD
     subgraph report[" 보고 "]
         V["verify.rs<br/>coverage · duplicate_* · unhandled_*"]
         R["render.rs<br/>state_diagram · when_flowchart · *_table"]
+        P["report.rs<br/>features · machine · golden!"]
     end
 
     L --> E
@@ -36,14 +37,16 @@ flowchart TD
     V --> M
     R --> F
     R --> M
+    P --> V
+    P --> R
 ```
 
 핵심은 두 가지입니다.
 
 - **`guard`는 어느 층도 모릅니다.** `Domain`에 대해서만 선언되므로 같은 가드
   노드가 `Edge`와 `Rule` 양쪽을 받칩니다.
-- **`verify`와 `render`는 실행에 관여하지 않습니다.** 표를 읽기만 하며,
-  실행 경로는 이 둘을 부르지 않습니다. 예외는 `Machine::new`가 디버그
+- **`verify`, `render`, `report`는 실행에 관여하지 않습니다.** 표를 읽기만 하며,
+  실행 경로는 이들을 부르지 않습니다. 예외는 `Machine::new`가 디버그
   빌드에서 `verify::coverage`를 한 번 부르는 것뿐입니다.
 
 ## 파일별 역할
@@ -61,6 +64,7 @@ flowchart TD
 | `machine/edge.rs` | `Edge`, `Source`, `Goto`, `Ignore` | 전이 표의 행 |
 | `verify.rs` | 검사 전부 | 표를 읽고 결함을 보고 |
 | `render.rs` | 다이어그램·표 생성 | 표를 읽고 문서를 생성 |
+| `report.rs` | `Report`, `features`, `machine`, `golden!` | `render`와 `verify`를 문서 하나로 묶음 |
 
 ## 타입이 서로를 부르는 방식
 
@@ -116,6 +120,7 @@ flowchart LR
 | `Machine::new` | 디버그 빌드에서 `verify::coverage` 실행 |
 | `verify` — 결함 목록을 만듦 | `Vec`, `String` |
 | `render` — 문서 문자열을 만듦 | `Vec`, `String` |
+| `report` — 문서와 결함 목록을 만듦 | `Vec`, `String` |
 | `Source::expand`, `AnyFeature::rows` 등 보고용 | `Vec`, `String` |
 
 즉 **실행하는 쪽도 `Memo` 때문에 힙을 씁니다.** 노드를 하나라도 평가하는

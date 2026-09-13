@@ -18,11 +18,6 @@ pub enum Action {
     Unfold,
 }
 
-// Only needed by `verify::unemitted_actions`; `Feature` does not require it.
-impl declared::Enumerable for Action {
-    const ALL: &'static [Self] = &[Self::Fold, Self::Unfold];
-}
-
 pub struct Fold;
 
 impl Feature for Fold {

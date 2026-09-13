@@ -119,6 +119,22 @@ fn main() {
 
 - [`examples/door_lock`](examples/door_lock/main.rs) — 상태 4개, 조건 가드, 와일드카드 `Ignore`
 - [`examples/mirrors`](examples/mirrors/main.rs) — 기능만으로 짠 컨트롤러: 열선, 감광, 접이
+- [`examples/custom_report`](examples/custom_report/main.rs) — `render`와 `verify`를 직접 조합해 만든 문서
+
+## 문서
+
+`report`는 컨트롤러 하나당 문서 하나를 만듭니다. 표와 다이어그램 전부 뒤에 검사
+결과가 붙습니다. `golden!`은 그 문서를 커밋된 파일과 대조합니다.
+
+```rust,ignore
+let r = declared::report::features("Mirrors controller", FEATURES); // 머신은 report::machine::<Door>(INITIAL)
+assert!(r.is_clean(), "{:?}", r.defects);
+declared::golden!("docs/mirrors.md", &r.markdown);
+```
+
+`golden!`은 파일과 다르면 실패하고, `DECLARED_WRITE=1`이 설정돼 있으면 파일을
+새로 씁니다. 다른 구성이 필요하면 `examples/custom_report`처럼 `render`와
+`verify`를 직접 부릅니다.
 
 ## 이점
 
@@ -158,8 +174,9 @@ fn main() {
 cargo test
 cargo run --example door_lock          # examples/door_lock/door_lock.md 검사
 cargo run --example mirrors            # examples/mirrors/mirrors.md 검사
+cargo run --example custom_report      # examples/custom_report/custom_report.md 검사
 ```
 
 각 예제는 문서를 다시 만들어 커밋된 `.md`와 대조하고, 어긋나면 실패합니다.
-그 파일들이 `render`의 테스트입니다. 의도한 변경 뒤에는 `-- --write`로
-재생성합니다.
+그 파일들이 `render`의 테스트입니다. 의도한 변경 뒤에는
+`DECLARED_WRITE=1 cargo run --example <이름>`으로 재생성합니다.

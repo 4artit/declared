@@ -2048,3 +2048,115 @@ fn a_declining_guard_is_not_a_missing_row() {
             .is_empty()
     );
 }
+
+// ─────────────────────────────────────────── report
+
+#[test]
+fn report_features_lays_out_every_section() {
+    let r = crate::report::features("Cam", CAMERA_FEATURES);
+
+    assert!(r.is_clean(), "{:?}", r.defects);
+    for section in [
+        "# Cam\n",
+        "## Features\n",
+        "## Rules\n",
+        "## By feature\n",
+        "### Camera\n",
+        "#### When `GearChanged`\n",
+        "```mermaid\nflowchart LR\n",
+        "## Checks\n",
+    ] {
+        assert!(r.markdown.contains(section), "missing {section:?}:\n{}", r.markdown);
+    }
+}
+
+/// An unhandled kind is listed but does not make the report unclean.
+#[test]
+fn report_features_lists_unhandled_kinds_without_failing() {
+    let r = crate::report::features("Cam", &[&Camera]);
+
+    assert!(r.is_clean(), "{:?}", r.defects);
+    assert!(
+        r.markdown.contains("| Events nothing handles | [SpeedChanged, PowerChanged] |"),
+        "{}",
+        r.markdown
+    );
+}
+
+#[test]
+fn report_features_turns_a_failed_check_into_a_defect() {
+    let r = crate::report::features("Colliding", &[&Colliding]);
+
+    assert!(!r.is_clean());
+    assert!(
+        r.defects[0].starts_with("Guard names used by two node types: "),
+        "{:?}",
+        r.defects
+    );
+}
+
+#[test]
+fn report_machine_lays_out_every_section() {
+    let r = crate::report::machine::<RearCam>(Tag::Off);
+
+    assert!(r.is_clean(), "{:?}", r.defects);
+    for section in [
+        "# RearCam\n",
+        "## Transitions\n\n```mermaid\nstateDiagram-v2\n",
+        "## In-place transitions\n",
+        "## Deliberately unhandled\n",
+        "| Overlapping edges | [(",
+    ] {
+        assert!(r.markdown.contains(section), "missing {section:?}:\n{}", r.markdown);
+    }
+}
+
+#[test]
+fn report_machine_turns_coverage_defects_into_defects() {
+    let r = crate::report::machine::<Broken>(Tag::Off);
+
+    for name in [
+        "Ignored but handled: ",
+        "Unreachable states: ",
+        "Guard names used by two node types: ",
+        "Edge ids used twice: ",
+    ] {
+        assert!(
+            r.defects.iter().any(|d| d.starts_with(name)),
+            "missing {name:?}: {:?}",
+            r.defects
+        );
+    }
+    assert!(!r.defects.iter().any(|d| d.starts_with("Overlapping edges")));
+}
+
+fn golden_scratch(name: &str, contents: Option<&str>) -> std::path::PathBuf {
+    let path = std::env::temp_dir().join(format!("declared-{}-{name}.md", std::process::id()));
+    match contents {
+        Some(c) => std::fs::write(&path, c).unwrap(),
+        None => {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+    path
+}
+
+#[test]
+fn golden_passes_when_the_file_matches() {
+    let path = golden_scratch("match", Some("same\n"));
+    crate::golden!(&path, "same\n");
+}
+
+#[test]
+#[should_panic(expected = "is stale")]
+fn golden_fails_when_the_file_differs() {
+    let path = golden_scratch("drift", Some("old\n"));
+    crate::golden!(&path, "new\n");
+}
+
+#[test]
+#[should_panic(expected = "DECLARED_WRITE=1")]
+fn golden_fails_when_the_file_is_missing() {
+    let path = golden_scratch("missing", None);
+    crate::golden!(&path, "new\n");
+}

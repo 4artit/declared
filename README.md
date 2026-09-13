@@ -122,6 +122,22 @@ Bigger examples:
 
 - [`examples/door_lock`](examples/door_lock/main.rs) — four states, guard conditions, `Ignore` with wildcard sources
 - [`examples/mirrors`](examples/mirrors/main.rs) — a controller built from features only: heating, dimming and folding
+- [`examples/custom_report`](examples/custom_report/main.rs) — a document assembled from `render` and `verify` directly
+
+## Documents
+
+`report` builds one document per controller — every table and diagram, then the
+check results — and `golden!` keeps it in step with a committed file:
+
+```rust,ignore
+let r = declared::report::features("Mirrors controller", FEATURES); // or report::machine::<Door>(INITIAL)
+assert!(r.is_clean(), "{:?}", r.defects);
+declared::golden!("docs/mirrors.md", &r.markdown);
+```
+
+`golden!` fails when the file differs, and rewrites it when `DECLARED_WRITE=1`
+is set. For another layout, call `render` and `verify` yourself, as
+`examples/custom_report` does.
 
 ## What it buys you
 
@@ -161,8 +177,9 @@ Bigger examples:
 cargo test
 cargo run --example door_lock          # checks examples/door_lock/door_lock.md
 cargo run --example mirrors            # checks examples/mirrors/mirrors.md
+cargo run --example custom_report      # checks examples/custom_report/custom_report.md
 ```
 
 Each example regenerates its document and compares it with the committed `.md`,
 failing on drift — those files are `render`'s tests. After an intended change,
-pass `-- --write` to regenerate.
+regenerate with `DECLARED_WRITE=1 cargo run --example <name>`.

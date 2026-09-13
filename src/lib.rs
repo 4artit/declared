@@ -18,6 +18,7 @@
 //! | [`machine`] | Controllers with states: a transition table and its executor |
 //! | [`render`] | Diagrams and tables derived from either declaration |
 //! | [`verify`] | Exhaustive gap reports over either declaration |
+//! | [`report`] | One document per controller: `render`'s output plus `verify`'s results |
 //!
 //! [`Domain`] bundles the types a controller works with and is shared by both
 //! layers, so a feature that grows states keeps the same declaration. It holds
@@ -38,6 +39,7 @@
 //! | [`events!`] | Event enum + kind enum + [`HasKind`] + [`Enumerable`] |
 //! | [`cond_node!`] | A [`guard::CondNode`] impl |
 //! | [`check!`] | A guard [`guard::Expr`] tree |
+//! | [`golden!`] | A check of a generated document against its committed file |
 
 extern crate alloc;
 
@@ -51,6 +53,8 @@ pub mod machine;
 // on every run, so those files are this module's tests.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub mod render;
+#[cfg_attr(coverage_nightly, coverage(off))]
+pub mod report;
 pub mod verify;
 
 #[cfg(test)]

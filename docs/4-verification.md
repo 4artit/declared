@@ -108,6 +108,14 @@ fn tables_are_clean() {
 | `render::when_groups` | 한 기능의 규칙들이 쓰는 `when` 조합 목록 | 기능 |
 | `render::when_table` | 한 기능에서 `when` 조합이 같은 규칙들 | 기능 |
 | `render::when_flowchart` | mermaid 흐름도 — 그 조합의 이벤트들 → 기능 → 액션 | 기능 |
+| `report::features` | 기능 목록 문서 — 위 기능 표·다이어그램 전부와 검사 결과 | 기능 |
+| `report::machine` | 머신 문서 — 위 머신 표·다이어그램 전부와 `coverage` 결과 | 머신 |
+
+`report`는 설명 문장 없이 표·다이어그램·검사 결과만 담습니다. 결함으로 치는
+검사가 비어 있지 않으면 `Report::defects`에 한 줄씩 들어가고 `is_clean()`이
+거짓이 됩니다. `unhandled_kinds`와 `overlaps`는 표에만 나오고 결함으로 치지
+않습니다. 다른 구성이 필요하면 `examples/custom_report`처럼 `render`와
+`verify`를 직접 조합합니다.
 
 이름 규칙은 내용 기준입니다. `*_diagram`과 `*_flowchart`는 mermaid 소스를,
 `*_table`은 마크다운 표를 돌려줍니다.
@@ -121,15 +129,21 @@ PlantUML이 필요하면 `scripts/mermaid_to_plantuml.sh`로 변환합니다.
 
 예제는 문서를 다시 만들어 커밋된 파일과 대조하고, 어긋나면 실패합니다.
 
-```sh
-cargo run --example door_lock          # 검사
-cargo run --example mirrors            # 검사
-cargo run --example mirrors -- --write # 의도한 변경 뒤 재생성
+```rust
+declared::golden!("examples/mirrors/mirrors.md", &r.markdown);
 ```
 
+```sh
+cargo run --example mirrors                    # 검사
+DECLARED_WRITE=1 cargo run --example mirrors   # 의도한 변경 뒤 재생성
+```
+
+경로는 호출한 크레이트의 `CARGO_MANIFEST_DIR` 기준입니다. 매크로가 호출한 쪽에서
+펼쳐져 `std`를 쓰므로, 크레이트 자체는 `no_std`로 남습니다.
+
 `render`에는 별도의 단위 테스트 대신 이 방식이 붙어 있습니다. 출력이 바뀌면
-`.md`의 diff로 정확히 무엇이 바뀌었는지 보이고, 의도한 변경이면 `--write`로
-갱신한 뒤 그 diff를 함께 커밋합니다.
+`.md`의 diff로 정확히 무엇이 바뀌었는지 보이고, 의도한 변경이면
+`DECLARED_WRITE=1`로 갱신한 뒤 그 diff를 함께 커밋합니다.
 
 ## 검사가 잡지 못하는 것
 

@@ -17,11 +17,6 @@ pub enum Action {
     Off,
 }
 
-// Only needed by `verify::unemitted_actions`; `Feature` does not require it.
-impl declared::Enumerable for Action {
-    const ALL: &'static [Self] = &[Self::On, Self::Off];
-}
-
 pub struct Dimming;
 
 /// The two signals dimming is a function of.

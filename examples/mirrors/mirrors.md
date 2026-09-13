@@ -1,13 +1,6 @@
 # Mirrors controller
 
-What this controller reacts to and what it does about it. Generated from the
-declarations, so it cannot drift from the code — regenerate with
-`cargo run --example mirrors`.
-
 ## Features
-
-One per file. `handles` and `emits` are read off the rules below, so a feature
-cannot react to or emit anything this table omits.
 
 | feature | handles | emits |
 |---|---|---|
@@ -16,10 +9,6 @@ cannot react to or emit anything this table omits.
 | `Fold` | `PowerChanged`, `SpeedChanged` | `Fold`, `Unfold` |
 
 ## Rules
-
-One line per `input -> output` rule. Within a feature the order is priority: the
-first rule whose guard holds is the one that runs, so a rule with no guard is a
-fallback.
 
 | feature | rule | when | guard | emits |
 |---|---|---|---|---|
@@ -32,10 +21,6 @@ fallback.
 | `Fold` | `UNFOLD_ON_SPEED` | `SpeedChanged` | `SpeedForcesUnfold && AtFolded` | `Unfold` |
 
 ## By feature
-
-Each feature, split by the set of events its rules react to. Rules triggered by
-the same combination share a table and a diagram, so what a feature does on
-each trigger reads in one place.
 
 ### Heating
 
@@ -97,7 +82,6 @@ flowchart LR
     ev_SpeedChanged["SpeedChanged"] --> ft_Fold["Fold"]
     ft_Fold["Fold"] -->|"UNFOLD_ON_SPEED<br/>SpeedForcesUnfold && AtFolded"| ac_Fold_UNFOLD_ON_SPEED["Unfold"]
 ```
-
 
 ## Checks
 
