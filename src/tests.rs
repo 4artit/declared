@@ -424,9 +424,9 @@ fn mermaid_matches_golden() {
 stateDiagram-v2
     [*] --> Off
     Showing : Showing<br/>entry / ShowCamera<br/>exit / HideCamera
-    Off --> Showing: GearChanged<br/>[GearIsReverse && SpeedBelowLimit]
-    Showing --> Off: GearChanged<br/>[!GearIsReverse]
-    Showing --> Off: SpeedChanged<br/>[!SpeedBelowLimit]<br/>unknown=Allow
+    Off --> Showing: CAM_ON<br/>GearChanged<br/>[GearIsReverse && SpeedBelowLimit]
+    Showing --> Off: CAM_OFF_GEAR<br/>GearChanged<br/>[!GearIsReverse]
+    Showing --> Off: CAM_OFF_SPEED<br/>SpeedChanged<br/>[!SpeedBelowLimit]<br/>unknown=Allow
 ";
 
     // No machine needed: the diagram comes from the static tables alone.
@@ -1092,7 +1092,7 @@ fn mermaid_labels_a_guardless_edge_and_its_run_actions() {
     let diagram = render::state_diagram::<Broken>(Tag::Off, BROKEN_EDGES, BROKEN_STATES);
 
     assert!(
-        diagram.contains("Off --> Off: GearChanged<br/>/ UpdateOverlay"),
+        diagram.contains("Off --> Off: NO_GUARD<br/>GearChanged<br/>/ UpdateOverlay"),
         "{diagram}"
     );
     // Showing has no state table entry, so it gets no description line.

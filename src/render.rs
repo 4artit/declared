@@ -24,7 +24,9 @@ use crate::{Domain, Enumerable, MachineSpec};
 ///   use [`internal_table`] for those.
 /// - `states`: entry/exit actions, drawn as state descriptions.
 ///
-/// Returns the diagram source. Converts to PlantUML almost line for line;
+/// Returns the diagram source. Each arrow is labelled with the edge id, then
+/// its event and guard, as the feature diagrams are. Converts to PlantUML almost
+/// line for line;
 /// see `scripts/mermaid_to_plantuml.sh`.
 pub fn state_diagram<M: MachineSpec>(
     initial: M::Tag,
@@ -68,9 +70,9 @@ pub fn state_diagram<M: MachineSpec>(
         };
         for from in e.from.expand() {
             let label = if guard.is_empty() {
-                format!("{:?}", e.when)
+                format!("{}<br/>{:?}", e.id, e.when)
             } else {
-                format!("{:?}<br/>[{guard}]", e.when)
+                format!("{}<br/>{:?}<br/>[{guard}]", e.id, e.when)
             };
             let _ = writeln!(s, "    {from:?} --> {next:?}: {label}{unknown}{emit}");
         }
