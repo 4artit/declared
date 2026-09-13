@@ -149,9 +149,11 @@ Bigger examples:
   - Each feature and each machine names its own action type, so every `perform` is exhaustive over exactly the effects its own file declares. Adding one is a compile error there and nowhere else.
   - Entry and exit run whichever edge led there, so they use a separate vocabulary, `StateAction`, and `perform_state` gets no event. An effect that needs one goes on an edge.
 
-- **It is `no_std`**
-  - Runs on `core` alone; dispatch and guard evaluation touch no heap.
-  - `alloc` is needed only by `render` and `verify` — what reports on a controller rather than runs it.
+- **It is `no_std`, but needs `alloc`**
+  - Linking needs a global allocator.
+  - Dispatch allocates: the guard memo is a `Vec` that grows as nodes are evaluated, so any dispatch that evaluates a node allocates. Tracing a declined machine dispatch at debug level allocates too.
+  - `render` and `verify` allocate for the documents and findings they build, and `Machine::new` runs `verify::coverage` in debug builds.
+  - Not yet suited to targets that forbid heap use at runtime.
 
 ## Tests
 

@@ -1,8 +1,7 @@
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
-// The core is allocation-free: dispatch, guard evaluation and the tables it
-// reads touch no heap. `alloc` is for what reports on a controller rather than
-// runs it — `render`'s documents and `verify`'s findings. Under `cfg(test)` the
-// harness needs std, so `cargo build` is what holds this honest.
+// `no_std` with `alloc`. Dispatch allocates through `Memo`'s `Vec`; `render`
+// and `verify` allocate for what they build. Under `cfg(test)` the harness
+// needs std, so `cargo build` is what checks the `no_std` part.
 #![cfg_attr(not(test), no_std)]
 //! A declarative controller framework.
 //!

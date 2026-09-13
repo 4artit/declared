@@ -110,10 +110,14 @@ flowchart LR
 
 | 부분 | 힙 사용 |
 |---|---|
-| `dispatch`, 가드 판정, `Memo`, 표 조회 | 없음 |
+| 표 조회, 가드 판정 자체 | 없음 |
+| `Memo` — dispatch마다 하나 | `Vec`. 노드를 처음 저장할 때 할당하고 늘어남 |
+| 머신 `dispatch`의 거절 로그 | debug 로그가 켜졌을 때만 `Vec` |
+| `Machine::new` | 디버그 빌드에서 `verify::coverage` 실행 |
 | `verify` — 결함 목록을 만듦 | `Vec`, `String` |
 | `render` — 문서 문자열을 만듦 | `Vec`, `String` |
 | `Source::expand`, `AnyFeature::rows` 등 보고용 | `Vec`, `String` |
 
-즉 **컨트롤러를 실행하는 쪽은 힙을 쓰지 않고, 보고하는 쪽만 씁니다.**
-`extern crate alloc`이 무조건이므로 링크 시 전역 할당자는 필요합니다.
+즉 **실행하는 쪽도 `Memo` 때문에 힙을 씁니다.** 노드를 하나라도 평가하는
+dispatch는 할당합니다. `extern crate alloc`이 무조건이므로 링크 시 전역
+할당자가 필요하고, 실행 중 힙 사용을 금지하는 타깃에는 아직 맞지 않습니다.
